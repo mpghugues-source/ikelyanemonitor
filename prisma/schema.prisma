@@ -1,0 +1,1062 @@
+// IkelyaneMonitor — data model
+//
+// Design notes
+//  • Prisma 7: the connection URL is configured in prisma.config.ts (not here).
+//  • Multi-tenant: every business table carries `orgId` and is indexed on it. All queries MUST be
+//    scoped by organization.
+//  • Time series live in ONE narrow table, `MetricEntry`. Prisma cannot declare hypertables, so
+//    migration `0002_timescaledb` converts it (hypertable, compression, retention, continuous
+//    aggregate). The Prisma model is a plain table as far as the client is concerned.
+//  • "Snapshot" columns on NetworkInterface / DatabaseInstance / MonitoredHost hold the LATEST known
+//    values (cheap dashboards, list pages). History always goes to MetricEntry.
+//  • Secrets (agent HMAC secrets, SNMP community / v3 keys) are stored ENCRYPTED (AES-256-GCM,
+//    see src/lib/crypto.ts) in columns suffixed `Enc`. Never store them in clear text.
+//  • BigInt is used for byte counters and cumulative SNMP counters (they exceed 2^31).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Locale {
+  EN
+  FR
+}
+
+/// RBAC. OWNER: everything incl. billing and deleting the organization. ADMIN: manage
+/// configuration, members and secrets. OPERATOR: acknowledge/resolve incidents, run
+/// remediations. VIEWER: read-only.
+enum Role {
+  OWNER
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+/// Shared health status for hosts, network devices, databases and endpoints.
+enum HealthStatus {
+  UNKNOWN
+  UP
+  DEGRADED
+  DOWN
+  MAINTENANCE
+}
+
+enum OsFamily {
+  WINDOWS
+  LINUX
+  MACOS
+  UNIX
+  OTHER
+}
+
+enum NetworkDeviceType {
+  ROUTER
+  SWITCH
+  FIREWALL
+  AP
+  UPS
+  /// Out-of-band management controllers: Dell iDRAC, HPE iLO, …
+  BMC
+  OTHER
+}
+
+enum SnmpVersion {
+  V1
+  V2C
+  V3
+}
+
+enum SnmpSecurityLevel {
+  NO_AUTH_NO_PRIV
+  AUTH_NO_PRIV
+  AUTH_PRIV
+}
+
+enum SnmpAuthProtocol {
+  MD5
+  SHA
+  SHA224
+  SHA256
+  SHA384
+  SHA512
+}
+
+enum SnmpPrivProtocol {
+  DES
+  AES
+  AES192
+  AES256
+}
+
+/// IF-MIB ifOperStatus / ifAdminStatus.
+enum OperStatus {
+  UP
+  DOWN
+  TESTING
+  UNKNOWN
+}
+
+enum DatabaseEngine {
+  POSTGRESQL
+  MYSQL
+  MARIADB
+  MONGODB
+  REDIS
+  MSSQL
+}
+
+enum HttpMethod {
+  GET
+  HEAD
+  POST
+  PUT
+  PATCH
+  DELETE
+  OPTIONS
+}
+
+/// What a MetricEntry row describes. Per-port network metrics are stored against their DEVICE with
+/// `instance` = port name (same convention as disks: source = host, instance = mount point);
+/// NETWORK_INTERFACE is reserved for a future per-interface source id.
+enum MetricSource {
+  HOST
+  NETWORK_DEVICE
+  NETWORK_INTERFACE
+  DATABASE
+  ENDPOINT
+}
+
+/// Every time-series metric the platform understands. Adding a value is a cheap migration
+/// (`ALTER TYPE "MetricType" ADD VALUE …`). Units are FIXED per metric (see comments) so that
+/// alert thresholds and charts never need unit conversion.
+enum MetricType {
+  // ── Host ──
+  CPU_USAGE_PERCENT // 0–100
+  LOAD_AVERAGE_1M
+  MEMORY_USED_PERCENT // 0–100
+  MEMORY_USED_BYTES
+  SWAP_USED_PERCENT // 0–100
+  DISK_USED_PERCENT // 0–100, `instance` = mount point
+  DISK_USED_BYTES // `instance` = mount point
+  DISK_READ_IOPS // operations/s, `instance` = device
+  DISK_WRITE_IOPS
+  DISK_READ_BPS // bytes/s
+  DISK_WRITE_BPS
+  NETWORK_IN_BPS // bits/s, `instance` = NIC name
+  NETWORK_OUT_BPS
+  PROCESS_COUNT
+  UPTIME_SECONDS
+  TEMPERATURE_CELSIUS // `instance` = sensor
+  POWER_WATTS // measured (BMC/UPS) or estimated
+
+  // ── Network devices / interfaces ──
+  BANDWIDTH_IN_BPS // bits/s, `instance` = port name
+  BANDWIDTH_OUT_BPS
+  BANDWIDTH_UTILIZATION_PERCENT // 0–100
+  PACKET_LOSS_PERCENT // 0–100
+  INTERFACE_ERRORS_PER_SEC
+  INTERFACE_CRC_ERRORS_PER_SEC
+  LATENCY_MS
+
+  // ── Databases ──
+  DB_QPS // queries or commands per second
+  DB_ACTIVE_CONNECTIONS
+  DB_CONNECTION_USAGE_PERCENT // 0–100 of max_connections
+  DB_CACHE_HIT_RATIO // 0–1
+  DB_SLOW_QUERIES_PER_MIN
+  DB_DEADLOCKS_PER_MIN
+  DB_REPLICATION_LAG_SECONDS
+  DB_STORAGE_USED_BYTES
+
+  // ── Endpoints (synthetic checks) ──
+  ENDPOINT_RESPONSE_MS
+  ENDPOINT_AVAILABLE // 1 = check passed, 0 = failed
+  ENDPOINT_SSL_DAYS_LEFT
+}
+
+enum AlertOperator {
+  GT
+  GTE
+  LT
+  LTE
+  EQ
+  NEQ
+}
+
+enum Severity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+/// AIOps: how eagerly the anomaly detector flags deviations from the learned baseline.
+enum AnomalySensitivity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum NotificationChannel {
+  EMAIL
+  SLACK
+  TEAMS
+  WEBHOOK
+  SMS
+  PUSH
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum IncidentEventType {
+  OPENED
+  ACKNOWLEDGED
+  NOTE
+  NOTIFIED
+  REMEDIATION_STARTED
+  REMEDIATION_FINISHED
+  RCA_GENERATED
+  RESOLVED
+  REOPENED
+}
+
+enum ScriptRuntime {
+  BASH
+  POWERSHELL
+  PYTHON
+}
+
+enum ExecutionStatus {
+  PENDING
+  AWAITING_APPROVAL
+  RUNNING
+  SUCCEEDED
+  FAILED
+  TIMED_OUT
+  SKIPPED
+  CANCELLED
+}
+
+enum ExecutionTrigger {
+  ALERT
+  MANUAL
+  SCHEDULE
+}
+
+enum TopologyNodeKind {
+  HOST
+  NETWORK_DEVICE
+  DATABASE
+  ENDPOINT
+  /// Logical service / application not backed by a monitored entity.
+  SERVICE
+  /// Third-party dependency (SaaS API, payment provider, …).
+  EXTERNAL
+}
+
+enum DependencyKind {
+  DEPENDS_ON
+  HOSTED_ON
+  CONNECTED_TO
+  ROUTES_TO
+  REPLICATES_TO
+}
+
+enum FinOpsRecommendationKind {
+  IDLE_RESOURCE
+  OVERSIZED
+  UNDERUTILIZED_STORAGE
+  OFF_HOURS_SHUTDOWN
+}
+
+enum RecommendationStatus {
+  OPEN
+  APPLIED
+  DISMISSED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenancy, users, RBAC
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Organization {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+  plan Plan   @default(FREE)
+
+  /// Days of raw metric history kept for this organization (enforced by a retention job;
+  /// the TimescaleDB policy is the global upper bound).
+  retentionDays Int @default(90)
+
+  // FinOps / GreenOps settings used by the analytics module.
+  currency                  String   @default("USD")
+  energyPricePerKwh         Decimal? @db.Decimal(10, 4)
+  /// Grid carbon intensity, gCO2e per kWh (depends on the region of the servers).
+  carbonIntensityGco2PerKwh Float    @default(400)
+  /// Power Usage Effectiveness of the data center (1.0 = perfect; typical 1.2–1.8).
+  powerUsageEffectiveness   Float    @default(1.4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships           Membership[]
+  invitations           Invitation[]
+  sessions              Session[]
+  hosts                 MonitoredHost[]
+  networkDevices        NetworkDevice[]
+  databases             DatabaseInstance[]
+  endpointChecks        EndpointCheck[]
+  topologyNodes         TopologyNode[]
+  serviceDependencies   ServiceDependency[]
+  remediationActions    RemediationAction[]
+  remediationExecutions RemediationExecution[]
+  alertRules            AlertRule[]
+  incidents             Incident[]
+  finopsRecommendations FinOpsRecommendation[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String?
+  /// bcrypt/argon2 hash; null for SSO-only accounts.
+  passwordHash      String?
+  /// UI language preference (also drives notification language).
+  locale            Locale    @default(EN)
+  timezone          String    @default("UTC")
+  lastLoginAt       DateTime?
+  /// Set when the password last changed; all other sessions are revoked at that moment.
+  passwordChangedAt DateTime?
+  /// Deactivated by an administrator (or the owner of the account): cannot sign in, sessions revoked.
+  disabledAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  memberships     Membership[]
+  sessions        Session[]
+  invitationsSent Invitation[]
+
+  @@map("users")
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  orgId     String
+  role      Role     @default(VIEWER)
+  createdAt DateTime @default(now())
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId, role])
+  @@map("memberships")
+}
+
+/// A browser session. The cookie carries an opaque random token; only its SHA-256 hash is stored,
+/// so a database leak does not yield usable sessions. Lifetime is sliding (`expiresAt`, pushed
+/// forward while the user is active) but capped (`absoluteExpiresAt`).
+model Session {
+  id                String    @id @default(cuid())
+  userId            String
+  tokenHash         String    @unique
+  /// The organization the user is currently working in (re-validated against memberships on
+  /// every request; null or stale falls back to the user's first membership).
+  activeOrgId       String?
+  createdAt         DateTime  @default(now())
+  lastUsedAt        DateTime  @default(now())
+  expiresAt         DateTime
+  absoluteExpiresAt DateTime
+  ipAddress         String?
+  userAgent         String?
+  revokedAt         DateTime?
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrg Organization? @relation(fields: [activeOrgId], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Invitation to join an organization with a given role. Delivered as a single-use link; only the
+/// token's hash is stored. An administrator cannot invite into a role above their own privileges
+/// (see src/lib/auth/permissions.ts).
+model Invitation {
+  id          String    @id @default(cuid())
+  orgId       String
+  /// Normalized (trimmed, lower-case).
+  email       String
+  role        Role
+  tokenHash   String    @unique
+  invitedById String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invitedBy User?        @relation(fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, acceptedAt, revokedAt])
+  @@index([email])
+  @@map("invitations")
+}
+
+/// Sign-in attempts, used to throttle password guessing per account and per source address.
+/// Short-lived: rows older than a day are purged opportunistically.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  /// Normalized e-mail as typed (also recorded for unknown accounts, so their existence is not revealed).
+  email     String
+  ipAddress String?
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("login_attempts")
+}
+
+/// Security-relevant events. Deliberately WITHOUT foreign keys and with a snapshot of the actor's
+/// e-mail: the trail must survive the deletion of the user or the organization it describes.
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String?
+  actorId    String?
+  actorEmail String?
+  /// Dotted event name, e.g. "auth.login", "member.role_changed", "host.secret_rotated".
+  action     String
+  targetType String?
+  targetId   String?
+  ipAddress  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Servers (agent-monitored hosts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model MonitoredHost {
+  id    String @id @default(cuid())
+  orgId String
+
+  hostname    String
+  displayName String?
+  tags        String[]
+  enabled     Boolean  @default(true)
+
+  // ── Agent authentication (HMAC) ──
+  /// Public identifier of the agent key, sent by the agent in `X-Ikelyane-Key-Id`.
+  /// Not secret (like an access-key id). Format: "ikm_" + 24 url-safe chars.
+  keyId                   String    @unique
+  /// Shared HMAC-SHA256 secret, encrypted at rest (AES-256-GCM).
+  hmacSecretEnc           String
+  secretRotatedAt         DateTime  @default(now())
+  /// During a rotation the previous secret stays valid until `previousSecretExpiresAt`,
+  /// so agents can be updated without losing telemetry.
+  previousHmacSecretEnc   String?
+  previousSecretExpiresAt DateTime?
+
+  // ── Inventory (reported by the agent) ──
+  osFamily         OsFamily @default(OTHER)
+  osName           String?
+  osVersion        String?
+  kernelVersion    String?
+  arch             String?
+  cpuModel         String?
+  cpuCores         Int?
+  cpuThreads       Int?
+  cpuFrequencyMhz  Int?
+  memoryTotalBytes BigInt?
+  diskTotalBytes   BigInt?
+  ipAddresses      String[]
+  macAddress       String?
+  virtualization   String? // "none" | "kvm" | "vmware" | "hyperv" | "docker" | …
+  cloudProvider    String?
+  cloudRegion      String?
+  agentVersion     String?
+
+  // ── FinOps / GreenOps inputs ──
+  /// Hourly cost of the machine (cloud price or amortized hardware), in the org currency.
+  hourlyCost     Decimal? @db.Decimal(12, 6)
+  /// Power draw model used to ESTIMATE energy when no wattmeter is available:
+  /// P(u) = idle + (max - idle) · cpuUtilization.
+  powerIdleWatts Float?
+  powerMaxWatts  Float?
+
+  // ── Latest state ──
+  status      HealthStatus @default(UNKNOWN)
+  firstSeenAt DateTime?
+  lastSeenAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  org                   Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  databases             DatabaseInstance[]
+  polledDevices         NetworkDevice[]
+  remediationActions    RemediationAction[]
+  remediationExecutions RemediationExecution[]
+  finopsRecommendations FinOpsRecommendation[]
+
+  @@unique([orgId, hostname])
+  @@index([orgId, status])
+  @@map("monitored_hosts")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Network equipment (SNMP)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model NetworkDevice {
+  id    String @id @default(cuid())
+  orgId String
+
+  name      String
+  ipAddress String            @db.Inet
+  type      NetworkDeviceType
+  tags      String[]
+  enabled   Boolean           @default(true)
+
+  vendor          String?
+  model           String?
+  firmwareVersion String?
+  serialNumber    String?
+  sysName         String?
+  sysDescr        String?
+  sysLocation     String?
+  sysContact      String?
+  uptimeSeconds   BigInt?
+  /// Estimated / measured power draw (UPS, PoE switch, BMC) for GreenOps.
+  powerWatts      Float?
+
+  /// Host whose agent polls this device.
+  pollerHostId    String?
+  pollIntervalSec Int     @default(60)
+
+  // ── SNMP credentials (secrets encrypted at rest) ──
+  snmpVersion         SnmpVersion        @default(V2C)
+  snmpPort            Int                @default(161)
+  snmpTimeoutMs       Int                @default(3000)
+  snmpRetries         Int                @default(1)
+  /// v1 / v2c community string.
+  snmpCommunityEnc    String?
+  /// v3 USM parameters.
+  snmpV3Username      String?
+  snmpV3SecurityLevel SnmpSecurityLevel?
+  snmpV3AuthProtocol  SnmpAuthProtocol?
+  snmpV3AuthKeyEnc    String?
+  snmpV3PrivProtocol  SnmpPrivProtocol?
+  snmpV3PrivKeyEnc    String?
+  snmpV3ContextName   String?
+
+  status       HealthStatus @default(UNKNOWN)
+  lastPolledAt DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  org        Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pollerHost MonitoredHost?     @relation(fields: [pollerHostId], references: [id], onDelete: SetNull)
+  interfaces NetworkInterface[]
+
+  @@unique([orgId, ipAddress])
+  @@index([orgId, type])
+  @@index([orgId, status])
+  @@index([pollerHostId])
+  @@map("network_devices")
+}
+
+model NetworkInterface {
+  id       String @id @default(cuid())
+  deviceId String
+
+  /// SNMP ifIndex — stable identifier of the port on the device.
+  ifIndex     Int
+  /// Port name (ifName), e.g. "Gi1/0/24".
+  name        String
+  alias       String? // ifAlias: operator-defined description
+  description String? // ifDescr
+  macAddress  String?
+  speedMbps   BigInt?
+  mtu         Int?
+
+  adminStatus OperStatus @default(UNKNOWN)
+  operStatus  OperStatus @default(UNKNOWN)
+
+  // Latest throughput computed by the agent from counter deltas.
+  inBps              BigInt @default(0)
+  outBps             BigInt @default(0)
+  utilizationPercent Float?
+  packetLossPercent  Float?
+
+  // Cumulative counters as last read from the device (reset when the device reboots).
+  inErrors    BigInt @default(0)
+  outErrors   BigInt @default(0)
+  crcErrors   BigInt @default(0)
+  inDiscards  BigInt @default(0)
+  outDiscards BigInt @default(0)
+
+  lastChangeAt DateTime?
+  lastPolledAt DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  device NetworkDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, ifIndex])
+  @@index([deviceId, operStatus])
+  @@map("network_interfaces")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Databases
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DatabaseInstance {
+  id    String @id @default(cuid())
+  orgId String
+
+  /// Host whose agent connects to and monitors this database.
+  hostId    String?
+  /// Stable identifier chosen by the agent, unique per host+engine (e.g. "main:5432").
+  name      String
+  engine    DatabaseEngine
+  version   String?
+  /// Address for display only ("10.0.0.5:5432"). Credentials are NEVER stored server-side:
+  /// the agent keeps them locally.
+  endpoint  String?
+  isReplica Boolean        @default(false)
+  tags      String[]
+  enabled   Boolean        @default(true)
+
+  storageQuotaBytes     BigInt?
+  storageUsedBytes      BigInt?
+  maxConnections        Int?
+  activeConnections     Int?
+  /// 0–1
+  cacheHitRatio         Float?
+  deadlocksTotal        BigInt?
+  replicationLagSeconds Float?
+  /// Queries slower than this are captured in SlowQueryLog.
+  slowQueryThresholdMs  Int     @default(1000)
+
+  status       HealthStatus @default(UNKNOWN)
+  lastPolledAt DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  host        MonitoredHost? @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  slowQueries SlowQueryLog[]
+
+  @@unique([orgId, hostId, engine, name])
+  @@index([orgId, engine])
+  @@index([orgId, status])
+  @@map("database_instances")
+}
+
+/// Slow-query log entries. The agent sends NORMALIZED text (literals replaced by placeholders)
+/// and truncates it; retention is short (see docs) because this table grows fast.
+model SlowQueryLog {
+  id           String   @id @default(cuid())
+  dbInstanceId String
+  capturedAt   DateTime
+  /// Hash of the normalized statement — groups identical query shapes.
+  fingerprint  String
+  queryText    String?  @db.Text
+  durationMs   Float
+  calls        Int      @default(1)
+  rowsExamined BigInt?
+  rowsReturned BigInt?
+  databaseName String?
+  userName     String?
+
+  dbInstance DatabaseInstance @relation(fields: [dbInstanceId], references: [id], onDelete: Cascade)
+
+  /// Makes agent retries idempotent: the same statement captured at the same instant is one row.
+  @@unique([dbInstanceId, fingerprint, capturedAt])
+  @@index([dbInstanceId, capturedAt(sort: Desc)])
+  @@map("slow_query_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Time series (TimescaleDB hypertable — see migration 0002_timescaledb)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One data point. Narrow ("long") layout: one row per (source, metric, instance, time).
+///  • `sourceId` is polymorphic (host / device / interface / database / endpoint id), so there is
+///    intentionally NO foreign key — hypertables do not benefit from it and ingestion stays fast.
+///  • `instance` distinguishes several series of the same metric on one source (mount point,
+///    CPU core, NIC, sensor…); empty string when not applicable.
+///  • The primary key includes `time` (required by TimescaleDB) and makes retried agent batches
+///    idempotent: inserts use ON CONFLICT DO NOTHING.
+model MetricEntry {
+  time       DateTime     @db.Timestamptz(3)
+  orgId      String
+  sourceKind MetricSource
+  sourceId   String
+  metric     MetricType
+  instance   String       @default("")
+  value      Float
+
+  @@id([sourceId, metric, instance, time])
+  @@index([orgId, metric, time(sort: Desc)])
+  @@map("metric_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SaaS / web / synthetic endpoint monitoring
+// ─────────────────────────────────────────────────────────────────────────────
+
+model EndpointCheck {
+  id    String @id @default(cuid())
+  orgId String
+
+  name    String
+  url     String
+  method  HttpMethod @default(GET)
+  /// Request headers. Values are stored as given: do not put long-lived secrets here —
+  /// use the (future) secrets store.
+  headers Json?
+  body    String?    @db.Text
+
+  // ── Assertions ──
+  expectedStatus       Int     @default(200)
+  expectedBodyContains String?
+  /// Multi-step synthetic scenario (JSON/JS steps executed by the check runner).
+  syntheticScript      String? @db.Text
+  followRedirects      Boolean @default(true)
+  verifySsl            Boolean @default(true)
+
+  // ── Scheduling ──
+  intervalSec Int      @default(60)
+  timeoutMs   Int      @default(10000)
+  regions     String[]
+  enabled     Boolean  @default(true)
+  tags        String[]
+
+  // ── Target SLA and TLS ──
+  /// Availability objective, in percent (99.9 = "three nines").
+  slaTargetPercent Float     @default(99.9)
+  sslExpiresAt     DateTime?
+  sslIssuer        String?
+
+  // ── Latest result ──
+  status              HealthStatus @default(UNKNOWN)
+  lastCheckedAt       DateTime?
+  lastStatusCode      Int?
+  lastResponseMs      Float?
+  consecutiveFailures Int          @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+  @@index([orgId, enabled])
+  @@map("endpoint_checks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Topology / service dependency map (React Flow)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A node of the map. Either a monitored entity (`refId` = its id) or a logical/external node.
+model TopologyNode {
+  id    String @id @default(cuid())
+  orgId String
+
+  kind      TopologyNodeKind
+  /// Id of the backing entity (host, device, database, endpoint); null for SERVICE / EXTERNAL.
+  refId     String?
+  label     String
+  /// Canvas position, persisted so that users' manual layouts survive reloads.
+  positionX Float            @default(0)
+  positionY Float            @default(0)
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org      Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Edges where this node is the PARENT (source).
+  children ServiceDependency[] @relation("DependencyParent")
+  /// Edges where this node is the CHILD (target).
+  parents  ServiceDependency[] @relation("DependencyChild")
+
+  @@unique([orgId, kind, refId])
+  @@index([orgId])
+  @@map("topology_nodes")
+}
+
+/// Directed edge parent → child, read as "the PARENT depends on / runs on / calls the CHILD".
+/// A parent node's failure never impacts its child; a child's failure impacts all its parents —
+/// root-cause analysis walks the graph in that direction.
+model ServiceDependency {
+  id           String         @id @default(cuid())
+  orgId        String
+  parentNodeId String
+  childNodeId  String
+  kind         DependencyKind @default(DEPENDS_ON)
+  /// How much the parent suffers if the child fails (weights RCA and blast-radius views).
+  criticality  Severity       @default(WARNING)
+  label        String?
+  createdAt    DateTime       @default(now())
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parentNode TopologyNode @relation("DependencyParent", fields: [parentNodeId], references: [id], onDelete: Cascade)
+  childNode  TopologyNode @relation("DependencyChild", fields: [childNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([parentNodeId, childNodeId, kind])
+  @@index([orgId])
+  @@index([childNodeId])
+  @@map("service_dependencies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Alerting, incidents, AIOps
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A rule fires when the metric crosses a static threshold for `durationSec`, and/or when the
+/// AIOps detector flags an anomaly. At least one of the two must be configured (CHECK constraint
+/// in migration 0003).
+model AlertRule {
+  id          String  @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  enabled     Boolean @default(true)
+
+  // ── Scope ──
+  sourceKind     MetricSource
+  /// null = every source of that kind in the organization.
+  sourceId       String?
+  metric         MetricType
+  /// Restrict to one series (mount point, NIC…); null = all.
+  instanceFilter String?
+
+  // ── Static threshold ──
+  operator    AlertOperator?
+  threshold   Float?
+  /// The condition must hold this long before an incident opens (flap protection).
+  durationSec Int            @default(300)
+  severity    Severity       @default(WARNING)
+
+  // ── AIOps ──
+  anomalyDetection   Boolean            @default(false)
+  anomalySensitivity AnomalySensitivity @default(MEDIUM)
+
+  // ── Notification ──
+  channels     NotificationChannel[]
+  notifyEmails String[]
+  webhookUrl   String?
+  /// Minimum delay between two notifications for the same rule + source.
+  cooldownSec  Int                   @default(900)
+
+  // ── Self-healing ──
+  remediationActionId String?
+  /// Run the remediation automatically when the rule fires (otherwise it is only suggested).
+  autoRemediate       Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org               Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  remediationAction RemediationAction? @relation(fields: [remediationActionId], references: [id], onDelete: SetNull)
+  incidents         Incident[]
+
+  @@index([orgId, enabled])
+  @@index([orgId, sourceKind, metric])
+  @@map("alert_rules")
+}
+
+model Incident {
+  id    String @id @default(cuid())
+  orgId String
+
+  ruleId   String?
+  title    String
+  severity Severity
+  status   IncidentStatus @default(OPEN)
+
+  // What is affected (denormalized label so the incident stays readable after deletions).
+  sourceKind   MetricSource?
+  sourceId     String?
+  sourceLabel  String?
+  metric       MetricType?
+  triggerValue Float?
+  peakValue    Float?
+  /// 0–1 score from the AIOps detector when the incident came from an anomaly.
+  anomalyScore Float?
+
+  startedAt      DateTime  @default(now())
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  resolutionNote String?   @db.Text
+
+  // ── AIOps root-cause analysis (one summary per supported UI language) ──
+  rcaSummaryEn   String?   @db.Text
+  rcaSummaryFr   String?   @db.Text
+  rcaConfidence  Float?
+  rcaModel       String?
+  rcaGeneratedAt DateTime?
+
+  updatedAt DateTime @updatedAt
+
+  org          Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  rule         AlertRule?             @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  events       IncidentEvent[]
+  remediations RemediationExecution[]
+
+  @@index([orgId, status, startedAt(sort: Desc)])
+  @@index([orgId, sourceId])
+  @@index([ruleId])
+  @@map("incidents")
+}
+
+/// Incident timeline (who did what, notifications sent, remediation steps, RCA generated…).
+model IncidentEvent {
+  id         String            @id @default(cuid())
+  incidentId String
+  type       IncidentEventType
+  message    String?           @db.Text
+  actorId    String?
+  data       Json?
+  createdAt  DateTime          @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId, createdAt])
+  @@map("incident_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-remediation (self-healing)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model RemediationAction {
+  id          String        @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  enabled     Boolean       @default(true)
+  runtime     ScriptRuntime
+  /// Script executed BY THE AGENT on the target host. Treat as privileged code: only ADMIN can
+  /// edit it and the agent only runs scripts signed with the host secret.
+  scriptBody  String        @db.Text
+  /// Arguments injected as environment variables (never interpolated into the script text).
+  args        Json?
+  timeoutSec  Int           @default(60)
+
+  /// null = run on the host that raised the incident.
+  targetHostId      String?
+  allowedOsFamilies OsFamily[]
+
+  // ── Safety guard-rails ──
+  requiresApproval Boolean @default(true)
+  cooldownSec      Int     @default(300)
+  maxRunsPerHour   Int     @default(3)
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org        Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  targetHost MonitoredHost?         @relation(fields: [targetHostId], references: [id], onDelete: SetNull)
+  alertRules AlertRule[]
+  executions RemediationExecution[]
+
+  @@index([orgId, enabled])
+  @@map("remediation_actions")
+}
+
+/// Execution log of a remediation action.
+model RemediationExecution {
+  id         String           @id @default(cuid())
+  orgId      String
+  actionId   String
+  incidentId String?
+  hostId     String?
+  trigger    ExecutionTrigger
+  status     ExecutionStatus  @default(PENDING)
+
+  requestedBy String?
+  approvedBy  String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  durationMs  Int?
+  exitCode    Int?
+  /// Truncated by the agent (max ~64 KiB each).
+  stdout      String?   @db.Text
+  stderr      String?   @db.Text
+  createdAt   DateTime  @default(now())
+
+  org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  action   RemediationAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  incident Incident?         @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  host     MonitoredHost?    @relation(fields: [hostId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([actionId, createdAt(sort: Desc)])
+  @@index([incidentId])
+  @@map("remediation_executions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FinOps / GreenOps
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FinOpsRecommendation {
+  id     String  @id @default(cuid())
+  orgId  String
+  hostId String?
+
+  kind    FinOpsRecommendationKind
+  status  RecommendationStatus     @default(OPEN)
+  /// Structured details (observed utilization, suggested size, …) rendered by the UI.
+  details Json?
+
+  estimatedMonthlySavings    Decimal? @db.Decimal(12, 2)
+  estimatedKwhSavedMonthly   Float?
+  estimatedCo2SavedKgMonthly Float?
+  confidence                 Float?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+
+  org  Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  host MonitoredHost? @relation(fields: [hostId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([hostId])
+  @@map("finops_recommendations")
+}
