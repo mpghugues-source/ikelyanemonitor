@@ -1,0 +1,32 @@
+# Base de développement : PostgreSQL + extension TimescaleDB.
+#
+#   docker compose up -d          # démarre
+#   docker compose down           # arrête (les données restent dans le volume)
+#   docker compose down -v        # arrête ET efface les données
+#
+# Le port n'est lié qu'à 127.0.0.1 : Docker publie les ports en contournant firewalld,
+# il ne faut donc jamais écrire "5440:5432" (= toutes les interfaces).
+services:
+  db:
+    image: timescale/timescaledb:latest-pg17
+    container_name: ikelyanemonitor-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ikelyane
+      # Base de DÉVELOPPEMENT uniquement (liée à 127.0.0.1). Surcharger avec un mot de passe aléatoire :
+      #   POSTGRES_PASSWORD=$(openssl rand -hex 24) docker compose up -d
+      # (le mot de passe est figé dans le volume à la première initialisation.)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ikelyane_dev_only}
+      POSTGRES_DB: ikelyanemonitor
+    ports:
+      - "127.0.0.1:5440:5432"
+    volumes:
+      - ikelyanemonitor-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ikelyane -d ikelyanemonitor"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  ikelyanemonitor-pgdata:
