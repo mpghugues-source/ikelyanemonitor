@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   the repository.
 - `public/.well-known/security.txt` (RFC 9116): served by the app itself at `/.well-known/security.txt`
   wherever it's deployed, pointing to the same reporting channels as `SECURITY.md`.
+- `.github/dependabot.yml`: weekly npm and GitHub Actions dependency update PRs. Enabled Dependabot
+  security updates on the repository.
 
 ## [0.1.0] - 2026-09-22
 

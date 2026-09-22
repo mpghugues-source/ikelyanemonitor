@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # npm dependencies (package.json / package-lock.json)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      # Patch/minor bumps land as one PR per week instead of a dozen; anything major stays separate
+      # so it gets a proper look (this project tracks Next.js 16 / React 19 closely — see AGENTS.md).
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+
+  # GitHub Actions used in .github/workflows/
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "ci"
