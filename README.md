@@ -1,5 +1,8 @@
 # IkelyaneMonitor
 
+![Status](https://img.shields.io/badge/status-in%20development-yellow)
+![License](https://img.shields.io/badge/license-proprietary-red)
+
 Repository: https://github.com/mpghugues-source/ikelyanemonitor
 
 All-in-one monitoring platform: **servers** (Windows / Linux / Unix / macOS via a local agent),
@@ -106,3 +109,7 @@ playwright.config.ts           E2E config: production build, port 3010
 - The ingestion endpoint has no rate limiting (put it behind a reverse proxy limit).
 - `npm audit` reports 4 findings in the **Prisma CLI's** dev tooling (`mysql2`, `deepmerge-ts`); they
   do not ship in the runtime, and the suggested fix is a downgrade to Prisma 6, so it is not applied.
+
+## License
+
+Proprietary — all rights reserved. The source is public for reference; see [LICENSE](LICENSE).
