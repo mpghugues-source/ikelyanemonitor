@@ -12,6 +12,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 - CI workflow (GitHub Actions): typecheck, lint, unit + integration tests against a real
   TimescaleDB service container, production build, and the Playwright browser suite on every push
   and pull request. Build/tests badge in the README.
+- `SECURITY.md`: vulnerability reporting process. Enabled GitHub private vulnerability reporting on
+  the repository.
 
 ## [0.1.0] - 2026-09-22
 
