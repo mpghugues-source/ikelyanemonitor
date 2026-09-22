@@ -1,8 +1,8 @@
 # Telemetry protocol (v1)
 
 How `ikelyane-agent` sends metrics to IkelyaneMonitor. This is the contract implemented by the Go
-agent in [`agent/`](../agent) (host metrics only, so far) and the reference for anyone writing a
-custom collector — for SNMP devices and databases, still only a contract until someone implements it.
+agent in [`agent/`](../agent) (host metrics and SNMP network devices) and the reference for anyone
+writing a custom collector — for databases, still only a contract until someone implements it.
 
 - Endpoint: `POST /api/v1/telemetry`
 - Body: JSON, at most `TELEMETRY_MAX_BODY_BYTES` (1 MiB by default)
@@ -135,7 +135,9 @@ Unknown fields are ignored (forward compatibility). Numbers must be finite; perc
 }]
 ```
 
-SNMP credentials are configured server-side (stored encrypted) and never sent by the agent.
+SNMP credentials are configured server-side (stored encrypted). The agent does not choose which
+devices to poll or with what credentials — it fetches its assignment from the server; see
+"Discovering SNMP targets" below.
 
 ### `databases` (DatabaseMetrics)
 
@@ -156,6 +158,46 @@ SNMP credentials are configured server-side (stored encrypted) and never sent by
 **Security rules for database data:** never send credentials (an `endpoint` containing `@` is
 rejected) and always send **normalized** query text (literals replaced by placeholders) — raw
 values would put personal data in the monitoring database.
+
+## 3b. Discovering SNMP targets
+
+`GET /api/v1/poller-config` — the devices assigned to the calling host (set in the web UI, per
+device: "polled by \<this host\>"), with SNMP credentials **decrypted** for this one response —
+the only place they ever leave the server in clear text, and only to the exact host authorized to
+poll each device.
+
+Signed exactly like `POST /api/v1/telemetry`, over an **empty body** (a GET has none):
+
+```
+t=<unix seconds>, v1=hex(HMAC-SHA256(secret, "<t>."))
+```
+
+```jsonc
+// 200
+{
+  "devices": [
+    {
+      "id": "dev_…",
+      "ipAddress": "192.168.1.1",
+      "type": "router",              // same enum as snmpDevices[].device.type
+      "pollIntervalSec": 60,
+      "snmp": {
+        "version": "v2c",            // v1 | v2c | v3
+        "port": 161, "timeoutMs": 3000, "retries": 1,
+        "community": "public",       // v1/v2c only, else null
+        "v3": null                   // present only when version = "v3":
+        // "v3": { "username": "…", "securityLevel": "AUTH_PRIV", "authProtocol": "SHA256",
+        //         "authKey": "…", "privProtocol": "AES", "privKey": "…", "contextName": "…" }
+      }
+    }
+  ]
+}
+```
+
+Same error codes as `POST /api/v1/telemetry` (401/403/500 — there is no request body to be
+malformed, so no 400/413/422 here). Poll this on startup and periodically (e.g. every few minutes)
+to pick up devices added, removed or reassigned in the web UI; there is no push notification.
+Results for `snmpDevices` still go through `POST /api/v1/telemetry` like everything else.
 
 ## 4. Responses
 

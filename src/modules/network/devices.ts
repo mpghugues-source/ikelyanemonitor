@@ -12,7 +12,7 @@ import {
 import { recordAudit } from "@/lib/auth/audit";
 import type { Actor, Db } from "@/lib/auth/db";
 import { can } from "@/lib/auth/permissions";
-import { encryptSecret } from "@/lib/crypto";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { fail, ok, type Result } from "@/lib/result";
 
 export { DEVICE_TYPES, SNMP_VERSIONS } from "./constants";
@@ -213,6 +213,69 @@ export async function setDeviceEnabled(db: PrismaClient, actor: Actor, id: strin
     });
     return ok(true as const);
   });
+}
+
+export interface PollerDeviceSnmpV3Config {
+  username: string | null;
+  securityLevel: SnmpSecurityLevel | null;
+  authProtocol: SnmpAuthProtocol | null;
+  authKey: string | null;
+  privProtocol: SnmpPrivProtocol | null;
+  privKey: string | null;
+  contextName: string | null;
+}
+
+export interface PollerDeviceConfig {
+  id: string;
+  ipAddress: string;
+  type: NetworkDeviceType;
+  pollIntervalSec: number;
+  snmpVersion: SnmpVersion;
+  snmpPort: number;
+  snmpTimeoutMs: number;
+  snmpRetries: number;
+  /** v1/v2c only. */
+  snmpCommunity: string | null;
+  snmpV3: PollerDeviceSnmpV3Config;
+}
+
+/**
+ * Devices assigned to `pollerHostId`, SNMP credentials DECRYPTED — for the poller-config endpoint
+ * (src/app/api/v1/poller-config/route.ts) ONLY. `listDevices` above is what the session-facing UI
+ * uses and never decrypts; this function must never be reachable from a page or Server Action —
+ * only from a request already authenticated as that exact poller host (authenticateAgent).
+ */
+export async function listDevicesForPoller(db: Db, orgId: string, pollerHostId: string): Promise<PollerDeviceConfig[]> {
+  const rows = await db.networkDevice.findMany({
+    where: { orgId, pollerHostId, enabled: true },
+    orderBy: { name: "asc" },
+    select: {
+      id: true, ipAddress: true, type: true, pollIntervalSec: true,
+      snmpVersion: true, snmpPort: true, snmpTimeoutMs: true, snmpRetries: true,
+      snmpCommunityEnc: true, snmpV3Username: true, snmpV3SecurityLevel: true, snmpV3AuthProtocol: true,
+      snmpV3AuthKeyEnc: true, snmpV3PrivProtocol: true, snmpV3PrivKeyEnc: true, snmpV3ContextName: true,
+    },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    ipAddress: row.ipAddress,
+    type: row.type,
+    pollIntervalSec: row.pollIntervalSec,
+    snmpVersion: row.snmpVersion,
+    snmpPort: row.snmpPort,
+    snmpTimeoutMs: row.snmpTimeoutMs,
+    snmpRetries: row.snmpRetries,
+    snmpCommunity: row.snmpCommunityEnc ? decryptSecret(row.snmpCommunityEnc, deviceSecretAad(row.id, "community")) : null,
+    snmpV3: {
+      username: row.snmpV3Username,
+      securityLevel: row.snmpV3SecurityLevel,
+      authProtocol: row.snmpV3AuthProtocol,
+      authKey: row.snmpV3AuthKeyEnc ? decryptSecret(row.snmpV3AuthKeyEnc, deviceSecretAad(row.id, "authKey")) : null,
+      privProtocol: row.snmpV3PrivProtocol,
+      privKey: row.snmpV3PrivKeyEnc ? decryptSecret(row.snmpV3PrivKeyEnc, deviceSecretAad(row.id, "privKey")) : null,
+      contextName: row.snmpV3ContextName,
+    },
+  }));
 }
 
 export async function deleteDevice(db: PrismaClient, actor: Actor, id: string): Promise<Result<true, DeviceWriteError>> {

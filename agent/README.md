@@ -1,11 +1,31 @@
 # ikelyane-agent
 
 The IkelyaneMonitor agent: collects host metrics (CPU, memory, disks, network, temperature,
-uptime, process count) and reports them to an IkelyaneMonitor server over the signed HTTP protocol
+uptime, process count) and polls SNMP network devices assigned to it in the web UI (routers,
+switches, firewalls, APs, UPSes, BMCs — v1/v2c/v3), reporting both over the signed HTTP protocol
 described in [`docs/telemetry.md`](../docs/telemetry.md).
 
-This first version reports **host metrics only**. SNMP polling and database monitoring (also part
-of the wire protocol) are not implemented yet.
+Database monitoring (also part of the wire protocol) is not implemented yet.
+
+## SNMP
+
+A device polled by this agent is configured entirely in the web UI (Network page: register the
+device, set its SNMP credentials, and pick "polled by" this host) — not in the agent's own config.
+On every collection cycle the agent:
+
+1. Fetches its assigned device list from `GET /api/v1/poller-config` (credentials included,
+   decrypted for this one response — see docs/telemetry.md "Discovering SNMP targets"), cached and
+   refreshed every 5 minutes so adding/removing a device in the UI is picked up without a restart.
+2. Polls each device (standard MIB-II/IF-MIB: sysDescr/sysName/sysUpTime, the interface table with
+   64-bit counters when available, EtherLike-MIB CRC errors on a best-effort basis), several
+   devices at once (bounded concurrency) so a handful of unreachable ones cannot stall a whole
+   cycle.
+3. Includes the results in the same request as the host sample.
+
+Vendor/model/serial number (ENTITY-MIB) and hardware temperature/power have no portable OID and
+are not collected; neither is packet loss (would need ICMP, which this agent does not do). A
+device that fails to respond is still reported, with `reachable: false` — the server then marks it
+DOWN rather than leaving it stale.
 
 ## Build
 
@@ -124,20 +144,25 @@ unaffected either way.
 ## Layout
 
 ```
-cmd/ikelyane-agent/   entry point: flags, the collect/send loop
-internal/config/      loads IKELYANE_* env vars or a JSON file
-internal/collect/     gopsutil-based host metrics, with per-cycle rate calculation for IOPS/bandwidth
-internal/telemetry/   wire types (mirrors src/lib/telemetry/schemas.ts), HMAC signing, HTTP client
-internal/buffer/      disk-backed retry queue for when the server is unreachable
+cmd/ikelyane-agent/    entry point: flags, the collect/send loop, SNMP device polling loop
+internal/config/       loads IKELYANE_* env vars or a JSON file
+internal/collect/      gopsutil-based host metrics, with per-cycle rate calculation for IOPS/bandwidth
+internal/snmp/         SNMP v1/v2c/v3 polling (github.com/gosnmp/gosnmp) — MIB-II/IF-MIB, counter-delta rates
+internal/pollerconfig/ fetches the assigned SNMP device list (+ decrypted credentials) from the server
+internal/telemetry/    wire types (mirrors src/lib/telemetry/schemas.ts), HMAC signing, HTTP client
+internal/buffer/       disk-backed retry queue for when the server is unreachable
 ```
 
 ## Testing
 
 ```bash
 go test ./...
+go test -race ./...          # internal/snmp shares Poller state across goroutines; race-tested
 ```
 
 `internal/telemetry`'s signing test reproduces the reference HMAC vector pinned in
 `docs/telemetry.md` (computed independently with OpenSSL) — a real cross-check of the algorithm,
 not just self-consistency. `internal/collect`'s tests include a smoke test that runs the real
-collector against whatever machine executes `go test`.
+collector against whatever machine executes `go test`. `internal/snmp`'s real-agent tests
+(`SNMP_TEST_TARGET=…`, see that file's doc comment to stand up a local `snmpd`) poll an actual SNMP
+v2c/v3 responder rather than mocking every PDU.
