@@ -15,7 +15,8 @@
     "provision:host": "tsx scripts/provision-host.ts",
     "postinstall": "prisma generate",
     "prebuild": "prisma generate",
-    "create:owner": "tsx scripts/create-owner.ts"
+    "create:owner": "tsx scripts/create-owner.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -39,6 +40,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",

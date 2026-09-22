@@ -47,7 +47,10 @@ export async function registerAction(_previous: FormState, formData: FormData): 
 
 const acceptSchema = z.object({
   token: z.string().min(1).max(256),
-  name: z.string().trim().max(120).optional(),
+  // Absent entirely for an existing account joining (the form has no name field then); when present
+  // (a new account) it must be non-empty — mirrors the input's `required` attribute server-side, so a
+  // request that skips client validation cannot create an account with a blank name.
+  name: z.string().trim().min(1).max(120).optional(),
   password: z.string().max(1024).optional(),
 });
 

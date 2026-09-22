@@ -34,6 +34,19 @@ export async function setSessionCookie(token: string, expiresAt: Date): Promise<
   });
 }
 
+/**
+ * A `__Host-` cookie can only be overwritten by a Set-Cookie that is itself Secure, has Path=/ and no
+ * Domain: browsers silently ignore a plain `Max-Age=0` deletion, which would leave the cookie in the
+ * browser after logout. So expire it with the same attributes it was set with.
+ */
 export async function clearSessionCookie(): Promise<void> {
-  (await cookies()).delete(sessionCookieName(cookiesAreSecure()));
+  const secure = cookiesAreSecure();
+  (await cookies()).set(sessionCookieName(secure), "", {
+    httpOnly: true,
+    secure,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+    expires: new Date(0),
+  });
 }
