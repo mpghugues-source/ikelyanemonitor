@@ -18,6 +18,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   wherever it's deployed, pointing to the same reporting channels as `SECURITY.md`.
 - `.github/dependabot.yml`: weekly npm and GitHub Actions dependency update PRs. Enabled Dependabot
   security updates on the repository.
+- Enabled GitHub secret scanning and push protection on the repository.
 
 ## [0.1.0] - 2026-09-22
 
