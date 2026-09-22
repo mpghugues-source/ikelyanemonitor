@@ -316,7 +316,7 @@
       "routesTo": "Achemine vers",
       "replicatesTo": "Réplique vers"
     },
-    "sampleData": "Données d'exemple — les flèches vont d'un service vers ce dont il dépend."
+    "arrowHint": "Les flèches vont d'un service vers ce dont il dépend."
   },
   "finops": {
     "title": "FinOps et GreenOps",
@@ -747,6 +747,71 @@
       "invalid_hostname": "Nom d'hôte invalide.",
       "hostname_taken": "Un serveur portant ce nom d'hôte existe déjà.",
       "not_found": "Ce serveur n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    }
+  },
+  "topologyAdmin": {
+    "choose": "Choisir…",
+    "empty": "Aucun nœud pour le moment. Ajoutez des serveurs, bases de données, équipements, endpoints ou services logiques pour cartographier les dépendances.",
+    "errors": {
+      "forbidden": "Votre rôle ne permet pas cette action.",
+      "invalid_ref": "Sélectionnez une cible valide.",
+      "already_exists": "Ce nœud ou cette dépendance existe déjà.",
+      "not_found": "Cet élément n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    }
+  },
+  "databaseAdmin": {
+    "empty": "Aucune instance de base de données découverte pour le moment. Les instances apparaissent automatiquement dès qu'un agent en signale une.",
+    "slowQueryThresholdMs": "Seuil de requête lente (ms)",
+    "actions": {
+      "enable": "Activer",
+      "disable": "Désactiver"
+    },
+    "errors": {
+      "forbidden": "Votre rôle ne permet pas cette action.",
+      "not_found": "Cette instance de base de données n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    }
+  },
+  "networkAdmin": {
+    "registerTitle": "Enregistrer un équipement réseau",
+    "registerHelp": "Configurez l'adresse et les identifiants SNMP qu'utilisera un agent superviseur.",
+    "editTitle": "Modifier l'équipement réseau",
+    "editSecretHelp": "Laissez un champ d'identifiant vide pour conserver celui déjà enregistré.",
+    "register": "Enregistrer l'équipement",
+    "registering": "Enregistrement…",
+    "empty": "Aucun équipement réseau enregistré pour le moment.",
+    "actions": {
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "deleteConfirm": "Supprimer l'équipement « {name} » ? Cette action est irréversible."
+    },
+    "errors": {
+      "forbidden": "Votre rôle ne permet pas cette action.",
+      "invalid_ip": "Saisissez une adresse IPv4 ou IPv6 valide.",
+      "ip_taken": "Un équipement avec cette adresse IP existe déjà.",
+      "invalid_poller": "Le serveur sélectionné ne fait pas partie de votre organisation.",
+      "not_found": "Cet équipement n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    }
+  },
+  "endpointAdmin": {
+    "registerTitle": "Ajouter un endpoint",
+    "registerHelp": "Configurez une URL à surveiller pour la disponibilité, la latence et l'expiration TLS.",
+    "editTitle": "Modifier l'endpoint",
+    "register": "Ajouter l'endpoint",
+    "registering": "Ajout…",
+    "empty": "Aucun endpoint configuré pour le moment.",
+    "actions": {
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "deleteConfirm": "Supprimer l'endpoint « {name} » ? Cette action est irréversible."
+    },
+    "errors": {
+      "forbidden": "Votre rôle ne permet pas cette action.",
+      "invalid_url": "Saisissez une URL http:// ou https:// valide.",
+      "not_found": "Cet endpoint n'existe plus.",
       "generic": "Une erreur est survenue. Veuillez réessayer."
     }
   },

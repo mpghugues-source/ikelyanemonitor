@@ -316,7 +316,7 @@
       "routesTo": "Routes to",
       "replicatesTo": "Replicates to"
     },
-    "sampleData": "Sample data — arrows point from a service to what it depends on."
+    "arrowHint": "Arrows point from a service to what it depends on."
   },
   "finops": {
     "title": "FinOps & GreenOps",
@@ -747,6 +747,71 @@
       "invalid_hostname": "Invalid hostname.",
       "hostname_taken": "A server with this hostname already exists.",
       "not_found": "This server no longer exists.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "topologyAdmin": {
+    "choose": "Choose…",
+    "empty": "No node yet. Add servers, databases, devices, endpoints or logical services to start mapping dependencies.",
+    "errors": {
+      "forbidden": "Your role does not allow this action.",
+      "invalid_ref": "Select a valid target.",
+      "already_exists": "This node or dependency already exists.",
+      "not_found": "This item no longer exists.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "databaseAdmin": {
+    "empty": "No database instance discovered yet. Instances appear automatically once an agent reports one.",
+    "slowQueryThresholdMs": "Slow query threshold (ms)",
+    "actions": {
+      "enable": "Enable",
+      "disable": "Disable"
+    },
+    "errors": {
+      "forbidden": "Your role does not allow this action.",
+      "not_found": "This database instance no longer exists.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "networkAdmin": {
+    "registerTitle": "Register a network device",
+    "registerHelp": "Configure the address and SNMP credentials a poller agent will use.",
+    "editTitle": "Edit network device",
+    "editSecretHelp": "Leave a credential field blank to keep the one already stored.",
+    "register": "Register device",
+    "registering": "Registering…",
+    "empty": "No network device registered yet.",
+    "actions": {
+      "enable": "Enable",
+      "disable": "Disable",
+      "deleteConfirm": "Delete the device \"{name}\"? This cannot be undone."
+    },
+    "errors": {
+      "forbidden": "Your role does not allow this action.",
+      "invalid_ip": "Enter a valid IPv4 or IPv6 address.",
+      "ip_taken": "A device with this IP address already exists.",
+      "invalid_poller": "The selected server is not part of your organization.",
+      "not_found": "This device no longer exists.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "endpointAdmin": {
+    "registerTitle": "Add an endpoint",
+    "registerHelp": "Configure a URL to check for availability, latency and TLS expiry.",
+    "editTitle": "Edit endpoint",
+    "register": "Add endpoint",
+    "registering": "Adding…",
+    "empty": "No endpoint configured yet.",
+    "actions": {
+      "enable": "Enable",
+      "disable": "Disable",
+      "deleteConfirm": "Delete the endpoint \"{name}\"? This cannot be undone."
+    },
+    "errors": {
+      "forbidden": "Your role does not allow this action.",
+      "invalid_url": "Enter a valid http:// or https:// URL.",
+      "not_found": "This endpoint no longer exists.",
       "generic": "Something went wrong. Please try again."
     }
   },

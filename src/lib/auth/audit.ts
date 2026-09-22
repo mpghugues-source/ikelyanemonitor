@@ -22,7 +22,24 @@ export type AuditAction =
   | "host.registered"
   | "host.secret_rotated"
   | "host.enabled"
-  | "host.disabled";
+  | "host.disabled"
+  | "endpoint.created"
+  | "endpoint.updated"
+  | "endpoint.enabled"
+  | "endpoint.disabled"
+  | "endpoint.deleted"
+  | "device.registered"
+  | "device.updated"
+  | "device.enabled"
+  | "device.disabled"
+  | "device.deleted"
+  | "database.updated"
+  | "database.enabled"
+  | "database.disabled"
+  | "topology.node_created"
+  | "topology.node_deleted"
+  | "topology.dependency_created"
+  | "topology.dependency_deleted";
 
 export interface AuditEntry {
   action: AuditAction;

@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { formatBytes } from "@/lib/format";
 import { carbonKgCo2e, energyCost, energyKwh, estimatePowerWatts, wastedCapacityRatio } from "@/modules/finops/energy";
 import { blastRadius, dependenciesOf, rootCauseCandidates, type DependencyEdge } from "@/modules/topology/graph";
 import { availabilityPercent, errorBudgetMinutes, isSlaBreached, sslDaysLeft } from "@/modules/saas/sla";
+
+describe("formatBytes", () => {
+  it("picks the largest unit under which the value is at least 1", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(1023)).toBe("1023 B");
+    expect(formatBytes(1536)).toBe("1.5 KB");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+    expect(formatBytes(2n * 1024n * 1024n * 1024n)).toBe("2.0 GB");
+  });
+
+  it("rejects negative or non-finite input", () => {
+    expect(formatBytes(-1)).toBe("—");
+    expect(formatBytes(Number.NaN)).toBe("—");
+  });
+});
 
 describe("finops / greenops energy model", () => {
   it("interpolates power linearly between idle and max", () => {
