@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Only the latest run per branch/PR matters; cancel a superseded one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      db:
+        # Same image as the local dev database (docker-compose.yml), so migrations behave identically.
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_USER: ikelyane
+          POSTGRES_PASSWORD: ci_only
+          POSTGRES_DB: ikelyanemonitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ikelyane -d ikelyanemonitor"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://ikelyane:ci_only@localhost:5432/ikelyanemonitor
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Fresh, disposable key: only encrypts data created and destroyed within this run.
+      - run: echo "IKELYANE_SECRET_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
+      - run: npm ci
+
+      - name: Apply database migrations
+        run: npm run db:migrate
+
+      - run: npm run typecheck
+      - run: npm run lint
+
+      - name: Unit + integration tests
+        run: npm test
+
+      - run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser end-to-end tests
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

@@ -1,5 +1,6 @@
 # IkelyaneMonitor
 
+[![CI](https://github.com/mpghugues-source/ikelyanemonitor/actions/workflows/ci.yml/badge.svg)](https://github.com/mpghugues-source/ikelyanemonitor/actions/workflows/ci.yml)
 ![Status](https://img.shields.io/badge/status-in%20development-yellow)
 ![License](https://img.shields.io/badge/license-proprietary-red)
 
