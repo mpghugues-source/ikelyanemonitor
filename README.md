@@ -1,5 +1,7 @@
 # IkelyaneMonitor
 
+Repository: https://github.com/mpghugues-source/ikelyanemonitor
+
 All-in-one monitoring platform: **servers** (Windows / Linux / Unix / macOS via a local agent),
 **databases** (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, SQL Server), **network equipment** over
 SNMP v1/v2c/v3, **web & SaaS endpoints**, with **AIOps**, **FinOps / GreenOps** and a **dependency
@@ -18,7 +20,7 @@ React Flow · Prisma 7 · PostgreSQL 17 + TimescaleDB · Zod.
 | Telemetry ingestion API — HMAC, Zod, atomic + idempotent storage | ✅ done, tested end to end |
 | Module logic: energy/carbon model, dependency-graph blast radius, SLA helpers | ✅ done (pure, tested) |
 | Dashboard UIs (charts, tables, forms) for each module | ⏳ placeholders; topology shows a React Flow sample |
-| Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations, members, audit log, host registration UI | ✅ done; server logic tested against a real database (see *Testing*); browser flows not yet automated |
+| Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations, members, audit log, host registration UI | ✅ done; tested against a real database, both server logic (`npm test`) and browser flows (`npm run test:e2e`) |
 | Alert evaluation, incident lifecycle, notifications | ⏳ next |
 | AIOps (anomaly detection, RCA), auto-remediation execution | ⏳ next (schema ready) |
 | `ikelyane-agent` (Go/Rust) and SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
@@ -55,6 +57,7 @@ npm run create:owner -- --email you@example.com --name "Your Name" --org "Acme"
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. With `DATABASE_URL` and `IKELYANE_SECRET_KEY` set it **also** runs the integration tests against a real TimescaleDB |
+| `npm run test:e2e` | Playwright browser tests (Chromium) against a **production build**: run `npm run build` first, then set `DATABASE_URL` and `IKELYANE_SECRET_KEY` and run this — it starts its own server on port 3010 |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
 | `npm run db:migrate` · `db:status` · `db:generate` | Prisma migrations / client |
 | `npm run create:owner` | Create the first organization + owner account (initial password printed once) |
@@ -76,6 +79,8 @@ src/lib/auth/                  permissions (RBAC matrix), password (scrypt), ses
 src/app/actions/               Server Actions (each re-checks session + permission)
 docs/telemetry.md              agent ↔ server protocol
 tests/                         unit + integration (real database)
+tests/e2e/                     Playwright browser tests (real database, production build)
+playwright.config.ts           E2E config: production build, port 3010
 ```
 
 ## Security model
@@ -98,7 +103,6 @@ tests/                         unit + integration (real database)
 
 - No multi-factor authentication yet, and no e-mail delivery: an invitation link is shown once to the person who creates it, who passes it on.
 - Server Actions rely on the browser's `Origin` matching the host: the reverse proxy must preserve the `Host` header (Apache: `ProxyPreserveHost On`).
-- Browser-level flows (sign-in, invitation, role-based UI) are not yet covered by automated end-to-end tests; the server-side logic behind them is.
 - The ingestion endpoint has no rate limiting (put it behind a reverse proxy limit).
 - `npm audit` reports 4 findings in the **Prisma CLI's** dev tooling (`mysql2`, `deepmerge-ts`); they
   do not ship in the runtime, and the suggested fix is a downgrade to Prisma 6, so it is not applied.
