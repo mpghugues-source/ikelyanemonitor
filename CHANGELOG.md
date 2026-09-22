@@ -3,9 +3,11 @@
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
-adheres to [Semantic Versioning](https://semver.org/) once it reaches a tagged release.
+adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-09-22
 
 ### Added
 
@@ -38,4 +40,5 @@ adheres to [Semantic Versioning](https://semver.org/) once it reaches a tagged r
 - The invitation-acceptance form accepted an empty name server-side (unlike registration), so a
   request bypassing the form's `required` attribute could create an account with no name.
 
-[Unreleased]: https://github.com/mpghugues-source/ikelyanemonitor/commits/main
+[Unreleased]: https://github.com/mpghugues-source/ikelyanemonitor/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mpghugues-source/ikelyanemonitor/releases/tag/v0.1.0
