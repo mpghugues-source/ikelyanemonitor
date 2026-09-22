@@ -15,7 +15,16 @@ const emailListSchema = z
   .trim()
   .max(1000)
   .optional()
-  .transform((value) => (value ? value.split(",").map((email) => email.trim()).filter(Boolean) : []));
+  .transform((value) => (value ? value.split(",").map((email) => email.trim()).filter(Boolean) : []))
+  .refine((emails) => emails.every((email) => z.email().safeParse(email).success), "invalid email");
+
+const httpUrlSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .optional()
+  .transform((value) => (value ? value : undefined))
+  .refine((value) => !value || (/^https?:\/\//i.test(value) && z.url().safeParse(value).success), "must be a valid http(s) URL");
 
 const ruleSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -30,7 +39,7 @@ const ruleSchema = z.object({
   severity: z.enum(Severity),
   channels: z.array(z.enum(NotificationChannel)).optional(),
   notifyEmails: emailListSchema,
-  webhookUrl: z.string().trim().url().max(500).optional(),
+  webhookUrl: httpUrlSchema,
   cooldownSec: z.coerce.number().int().min(60).max(86400),
 });
 

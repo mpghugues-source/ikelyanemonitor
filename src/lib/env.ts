@@ -23,6 +23,15 @@ const envSchema = z.object({
     .default(1024 * 1024),
   /** How far in the past a data point may be (agents replay their buffer after an outage). */
   TELEMETRY_MAX_BACKFILL_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+
+  /**
+   * Outgoing alert e-mail (src/lib/notify/email.ts). When unset, mail is handed to the local
+   * `/usr/sbin/sendmail` (works out of the box on this cPanel host, which already rewrites/DKIM-signs
+   * `@ikelyane.com` outgoing mail — see the deployment notes). Set SMTP_URL to use a real SMTP
+   * relay instead (e.g. on a host with no local MTA): smtp://user:pass@host:587.
+   */
+  SMTP_URL: z.string().trim().min(1).optional(),
+  ALERTS_EMAIL_FROM: z.string().trim().min(1).default("IkelyaneMonitor <noreply@ikelyane.com>"),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

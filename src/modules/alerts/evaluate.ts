@@ -2,6 +2,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { AlertOperator, IncidentEventType, IncidentStatus } from "@/generated/prisma/enums";
 import type { MetricRow } from "@/lib/telemetry/metrics";
 import { AUTO_RESOLUTION_NOTE } from "@/modules/alerts/constants";
+import { dispatchIncidentNotification, type NotifiableIncident, type NotifiableRule, type NotificationOutcome, shouldRenotify } from "@/modules/alerts/notify";
 import { resolveSourceLabels } from "@/modules/alerts/resolve-source";
 
 /** True when `value` breaches the rule's condition. Pure — see tests/alerts.test.ts. */
@@ -62,14 +63,38 @@ export function worstValue(operator: AlertOperator, a: number, b: number): numbe
  */
 const HISTORY_LOOKBACK_POINTS = 500;
 
+/** process.env.APP_BASE_URL, trimmed — mirrors src/lib/auth/dal.ts's getBaseUrl() minus the request-header
+ * fallback, which this module must not depend on: it can run outside of any request (a future
+ * scheduled re-evaluation), not just from the telemetry route. */
+function appUrl(): string | null {
+  const configured = process.env.APP_BASE_URL?.trim().replace(/\/+$/, "");
+  return configured || null;
+}
+
+/**
+ * Dispatch (best-effort) and record a NOTIFIED event — but only when the rule actually has a
+ * channel configured with a target, so silence isn't logged as a fake "notification sent". Never
+ * throws: a bad webhook URL or unreachable SMTP must not stop evaluation of the other rules/points
+ * in this batch (see the try/catch at each call site below).
+ */
+async function notify(db: PrismaClient, rule: NotifiableRule, incident: NotifiableIncident, outcome: NotificationOutcome): Promise<void> {
+  const results = await dispatchIncidentNotification(rule, incident, outcome, { appUrl: appUrl() });
+  if (results.length === 0) return;
+  const data = { outcome, results: results.map((r) => ({ channel: r.channel, ok: r.ok, error: r.error ?? null })) };
+  await db.incidentEvent.create({ data: { incidentId: incident.id, type: IncidentEventType.NOTIFIED, data } });
+}
+
 /**
  * Re-evaluate every enabled static-threshold rule against the metric points just stored by one
- * telemetry ingestion, opening/updating/auto-resolving incidents as needed.
+ * telemetry ingestion, opening/updating/auto-resolving incidents as needed, and dispatching
+ * notifications (email/Slack/webhook — see src/modules/alerts/notify.ts) on open, on
+ * auto-resolution, and again while an incident stays open once `cooldownSec` has elapsed since the
+ * last one.
  *
  * Best-effort by design: called AFTER the ingestion transaction commits (see the route handler),
  * wrapped in try/catch there — a bug here must never make telemetry storage fail. AI anomaly
- * detection (`AlertRule.anomalyDetection`) and channel dispatch (email/Slack/webhook/…) are not
- * implemented yet: rules only fire against a static threshold, and no notification is sent.
+ * detection (`AlertRule.anomalyDetection`) is not implemented yet: rules only fire against a static
+ * threshold. TEAMS/SMS/PUSH channels are configurable but not dispatched (see notify.ts).
  */
 export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, rows: readonly MetricRow[], now: Date): Promise<void> {
   if (rows.length === 0) return;
@@ -151,17 +176,35 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
             data: { operator, threshold, value: point.value, instance: point.instance },
           },
         });
+        try {
+          await notify(db, rule, incident, "opened");
+        } catch (error) {
+          console.error("[alerts] notification failed", error);
+        }
       } else if (sustained && open) {
-        await db.incident.update({
+        const updated = await db.incident.update({
           where: { id: open.id },
           data: { triggerValue: point.value, peakValue: worstValue(operator, open.peakValue ?? point.value, point.value) },
         });
+        const lastNotified = await db.incidentEvent.findFirst({ where: { incidentId: open.id, type: IncidentEventType.NOTIFIED }, orderBy: { createdAt: "desc" } });
+        if (shouldRenotify(lastNotified?.createdAt ?? null, rule.cooldownSec, now)) {
+          try {
+            await notify(db, rule, updated, "still_open");
+          } catch (error) {
+            console.error("[alerts] notification failed", error);
+          }
+        }
       } else if (!sustained && open) {
-        await db.incident.update({
+        const resolved = await db.incident.update({
           where: { id: open.id },
           data: { status: IncidentStatus.RESOLVED, resolvedAt: now, resolvedBy: null, resolutionNote: AUTO_RESOLUTION_NOTE },
         });
         await db.incidentEvent.create({ data: { incidentId: open.id, type: IncidentEventType.RESOLVED, data: { auto: true } } });
+        try {
+          await notify(db, rule, resolved, "resolved");
+        } catch (error) {
+          console.error("[alerts] notification failed", error);
+        }
       }
     }
   }
