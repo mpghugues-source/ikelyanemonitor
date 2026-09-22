@@ -39,7 +39,12 @@ export type AuditAction =
   | "topology.node_created"
   | "topology.node_deleted"
   | "topology.dependency_created"
-  | "topology.dependency_deleted";
+  | "topology.dependency_deleted"
+  | "alert_rule.created"
+  | "alert_rule.updated"
+  | "alert_rule.enabled"
+  | "alert_rule.disabled"
+  | "alert_rule.deleted";
 
 export interface AuditEntry {
   action: AuditAction;

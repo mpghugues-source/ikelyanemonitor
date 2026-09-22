@@ -95,6 +95,43 @@
       "last30d": "30 derniers jours"
     }
   },
+  "metricType": {
+    "cpuUsagePercent": "Utilisation CPU",
+    "loadAverage1m": "Charge moyenne (1 min)",
+    "memoryUsedPercent": "Mémoire utilisée",
+    "memoryUsedBytes": "Mémoire utilisée (octets)",
+    "swapUsedPercent": "Swap utilisé",
+    "diskUsedPercent": "Disque utilisé",
+    "diskUsedBytes": "Disque utilisé (octets)",
+    "diskReadIops": "IOPS lecture disque",
+    "diskWriteIops": "IOPS écriture disque",
+    "diskReadBps": "Débit lecture disque",
+    "diskWriteBps": "Débit écriture disque",
+    "networkInBps": "Réseau entrant",
+    "networkOutBps": "Réseau sortant",
+    "processCount": "Nombre de processus",
+    "uptimeSeconds": "Disponibilité (uptime)",
+    "temperatureCelsius": "Température",
+    "powerWatts": "Puissance consommée",
+    "bandwidthInBps": "Bande passante entrante",
+    "bandwidthOutBps": "Bande passante sortante",
+    "bandwidthUtilizationPercent": "Utilisation de la bande passante",
+    "packetLossPercent": "Perte de paquets",
+    "interfaceErrorsPerSec": "Erreurs d'interface",
+    "interfaceCrcErrorsPerSec": "Erreurs CRC d'interface",
+    "latencyMs": "Latence",
+    "dbQps": "Requêtes par seconde",
+    "dbActiveConnections": "Connexions actives",
+    "dbConnectionUsagePercent": "Utilisation des connexions",
+    "dbCacheHitRatio": "Taux de succès du cache",
+    "dbSlowQueriesPerMin": "Requêtes lentes par minute",
+    "dbDeadlocksPerMin": "Interblocages par minute",
+    "dbReplicationLagSeconds": "Retard de réplication",
+    "dbStorageUsedBytes": "Stockage utilisé",
+    "endpointResponseMs": "Temps de réponse",
+    "endpointAvailable": "Disponibilité",
+    "endpointSslDaysLeft": "Jours avant expiration TLS"
+  },
   "host": {
     "title": "Serveurs",
     "subtitle": "Hôtes Windows, Linux, Unix et macOS remontant leurs métriques via l'agent local",
@@ -398,6 +435,26 @@
       "reopened": "Rouvert"
     }
   },
+  "incidentsAdmin": {
+    "active": "Incidents actifs",
+    "resolvedRecent": "Récemment résolus",
+    "empty": "Aucun incident actif — aucun seuil d'alerte n'a été dépassé.",
+    "emptyResolved": "Aucun incident résolu pour l'instant.",
+    "notePlaceholder": "Ajouter une note…",
+    "addNote": "Ajouter la note",
+    "adding": "Ajout…",
+    "acknowledging": "Prise en compte…",
+    "resolving": "Résolution…",
+    "reopening": "Réouverture…",
+    "resolutionNotePlaceholder": "Qu'est-ce qui a résolu le problème ? (optionnel)",
+    "systemResolved": "Résolu automatiquement : la condition ne dépasse plus le seuil.",
+    "errors": {
+      "forbidden": "Votre rôle ne permet pas cette action.",
+      "invalid_status": "Cet incident ne peut pas changer vers ce statut actuellement.",
+      "not_found": "Cet incident n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    }
+  },
   "alerts": {
     "title": "Règles d'alerte",
     "subtitle": "Seuils et détection d'anomalies par IA qui ouvrent des incidents",
@@ -437,6 +494,28 @@
       "high": "Élevée"
     },
     "conditionRequired": "Définissez un seuil, activez la détection d'anomalies, ou les deux."
+  },
+  "alertsAdmin": {
+    "createTitle": "Nouvelle règle d'alerte",
+    "editTitle": "Modifier la règle d'alerte",
+    "create": "Créer la règle",
+    "creating": "Création…",
+    "empty": "Aucune règle d'alerte configurée pour l'instant.",
+    "source": "Source",
+    "sourceKind": "Type de source",
+    "instanceFilter": "Filtre de série (optionnel)",
+    "instanceFilterHelp": "Restreindre à une série (point de montage, carte réseau, port…) ; laisser vide pour tout inclure.",
+    "actions": {
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "deleteConfirm": "Supprimer la règle « {name} » ? Cette action est irréversible."
+    },
+    "errors": {
+      "forbidden": "Votre rôle ne permet pas cette action.",
+      "invalid_source": "La source sélectionnée ne fait pas partie de votre organisation.",
+      "not_found": "Cette règle n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    }
   },
   "aiops": {
     "title": "AIOps",
@@ -510,7 +589,9 @@
     "network": "Ports SNMP v1/v2c/v3, bande passante, erreurs et perte de paquets",
     "saas": "Disponibilité, latence, expiration TLS et vérifications synthétiques",
     "topology": "Carte de dépendances en direct avec rayon d'impact",
-    "finops": "Ressources gaspillées, économies et empreinte carbone"
+    "finops": "Ressources gaspillées, économies et empreinte carbone",
+    "alerts": "Seuils qui ouvrent automatiquement des incidents",
+    "incidents": "Ce qui est en panne maintenant, et la chronologie complète"
   },
   "errors": {
     "generic": "Une erreur est survenue. Veuillez réessayer.",

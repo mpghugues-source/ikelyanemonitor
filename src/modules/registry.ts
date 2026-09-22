@@ -1,4 +1,4 @@
-import { Database, Globe, Leaf, Network, Server, Workflow, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Bell, Database, Globe, Leaf, Network, Server, Workflow, type LucideIcon } from "lucide-react";
 
 /**
  * The monitoring modules shown in navigation and on the overview page.
@@ -9,7 +9,7 @@ import { Database, Globe, Leaf, Network, Server, Workflow, type LucideIcon } fro
  * Labels are NOT stored here: they come from the dictionaries (`nav.<key>` for the name,
  * `modules.<key>` for the description), so adding a language never touches this file.
  */
-export type ModuleKey = "servers" | "databases" | "network" | "saas" | "topology" | "finops";
+export type ModuleKey = "servers" | "databases" | "network" | "saas" | "topology" | "finops" | "incidents" | "alerts";
 
 export interface ModuleDefinition {
   key: ModuleKey;
@@ -25,4 +25,6 @@ export const MODULES: readonly ModuleDefinition[] = [
   { key: "saas", href: "/saas", icon: Globe },
   { key: "topology", href: "/topology", icon: Workflow },
   { key: "finops", href: "/finops", icon: Leaf },
+  { key: "incidents", href: "/incidents", icon: AlertTriangle },
+  { key: "alerts", href: "/alerts", icon: Bell },
 ];

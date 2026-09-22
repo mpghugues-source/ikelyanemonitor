@@ -95,6 +95,43 @@
       "last30d": "Last 30 days"
     }
   },
+  "metricType": {
+    "cpuUsagePercent": "CPU usage",
+    "loadAverage1m": "Load average (1 min)",
+    "memoryUsedPercent": "Memory used",
+    "memoryUsedBytes": "Memory used (bytes)",
+    "swapUsedPercent": "Swap used",
+    "diskUsedPercent": "Disk used",
+    "diskUsedBytes": "Disk used (bytes)",
+    "diskReadIops": "Disk read IOPS",
+    "diskWriteIops": "Disk write IOPS",
+    "diskReadBps": "Disk read throughput",
+    "diskWriteBps": "Disk write throughput",
+    "networkInBps": "Network in",
+    "networkOutBps": "Network out",
+    "processCount": "Process count",
+    "uptimeSeconds": "Uptime",
+    "temperatureCelsius": "Temperature",
+    "powerWatts": "Power draw",
+    "bandwidthInBps": "Bandwidth in",
+    "bandwidthOutBps": "Bandwidth out",
+    "bandwidthUtilizationPercent": "Bandwidth utilization",
+    "packetLossPercent": "Packet loss",
+    "interfaceErrorsPerSec": "Interface errors",
+    "interfaceCrcErrorsPerSec": "Interface CRC errors",
+    "latencyMs": "Latency",
+    "dbQps": "Queries per second",
+    "dbActiveConnections": "Active connections",
+    "dbConnectionUsagePercent": "Connection usage",
+    "dbCacheHitRatio": "Cache hit ratio",
+    "dbSlowQueriesPerMin": "Slow queries per minute",
+    "dbDeadlocksPerMin": "Deadlocks per minute",
+    "dbReplicationLagSeconds": "Replication lag",
+    "dbStorageUsedBytes": "Storage used",
+    "endpointResponseMs": "Response time",
+    "endpointAvailable": "Availability",
+    "endpointSslDaysLeft": "TLS certificate days left"
+  },
   "host": {
     "title": "Servers",
     "subtitle": "Windows, Linux, Unix and macOS hosts reporting through the local agent",
@@ -398,6 +435,26 @@
       "reopened": "Reopened"
     }
   },
+  "incidentsAdmin": {
+    "active": "Active incidents",
+    "resolvedRecent": "Recently resolved",
+    "empty": "No active incident — nothing has crossed an alert threshold.",
+    "emptyResolved": "No resolved incident yet.",
+    "notePlaceholder": "Add a note…",
+    "addNote": "Add note",
+    "adding": "Adding…",
+    "acknowledging": "Acknowledging…",
+    "resolving": "Resolving…",
+    "reopening": "Reopening…",
+    "resolutionNotePlaceholder": "What fixed it? (optional)",
+    "systemResolved": "Auto-resolved: the condition no longer breaches the threshold.",
+    "errors": {
+      "forbidden": "Your role does not allow this action.",
+      "invalid_status": "This incident cannot change to that status right now.",
+      "not_found": "This incident no longer exists.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
   "alerts": {
     "title": "Alert rules",
     "subtitle": "Thresholds and AI anomaly detection that open incidents",
@@ -437,6 +494,28 @@
       "high": "High"
     },
     "conditionRequired": "Set a threshold, enable anomaly detection, or both."
+  },
+  "alertsAdmin": {
+    "createTitle": "New alert rule",
+    "editTitle": "Edit alert rule",
+    "create": "Create rule",
+    "creating": "Creating…",
+    "empty": "No alert rule configured yet.",
+    "source": "Source",
+    "sourceKind": "Source type",
+    "instanceFilter": "Series filter (optional)",
+    "instanceFilterHelp": "Restrict to one series (mount point, NIC, port…); leave blank to match all.",
+    "actions": {
+      "enable": "Enable",
+      "disable": "Disable",
+      "deleteConfirm": "Delete the rule \"{name}\"? This cannot be undone."
+    },
+    "errors": {
+      "forbidden": "Your role does not allow this action.",
+      "invalid_source": "The selected source is not part of your organization.",
+      "not_found": "This rule no longer exists.",
+      "generic": "Something went wrong. Please try again."
+    }
   },
   "aiops": {
     "title": "AIOps",
@@ -510,7 +589,9 @@
     "network": "SNMP v1/v2c/v3 ports, bandwidth, errors and packet loss",
     "saas": "Uptime, latency, TLS expiry and synthetic checks",
     "topology": "Live dependency map with blast-radius view",
-    "finops": "Wasted resources, savings and carbon footprint"
+    "finops": "Wasted resources, savings and carbon footprint",
+    "alerts": "Thresholds that open incidents automatically",
+    "incidents": "What is broken now, and the full timeline of what happened"
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",
