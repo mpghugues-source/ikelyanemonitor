@@ -1,0 +1,10 @@
+# IkelyaneMonitor — RFC 9116 security.txt
+# Source of truth: https://github.com/mpghugues-source/ikelyanemonitor/blob/main/SECURITY.md
+# NOTE: this file lives in the app's `public/` directory, so it is served wherever this
+# application is deployed. Set Canonical below to the real production URL once deployed.
+
+Contact: https://github.com/mpghugues-source/ikelyanemonitor/security/advisories/new
+Contact: mailto:info@ikelyane.com
+Policy: https://github.com/mpghugues-source/ikelyanemonitor/blob/main/SECURITY.md
+Preferred-Languages: en, fr
+Expires: 2027-09-22T00:00:00.000Z

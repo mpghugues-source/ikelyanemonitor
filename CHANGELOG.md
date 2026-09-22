@@ -14,6 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   and pull request. Build/tests badge in the README.
 - `SECURITY.md`: vulnerability reporting process. Enabled GitHub private vulnerability reporting on
   the repository.
+- `public/.well-known/security.txt` (RFC 9116): served by the app itself at `/.well-known/security.txt`
+  wherever it's deployed, pointing to the same reporting channels as `SECURITY.md`.
 
 ## [0.1.0] - 2026-09-22
 
