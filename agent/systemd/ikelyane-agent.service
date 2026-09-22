@@ -1,0 +1,30 @@
+[Unit]
+Description=IkelyaneMonitor agent
+Documentation=https://github.com/mpghugues-source/ikelyanemonitor/blob/main/docs/telemetry.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ikelyane-agent
+EnvironmentFile=/etc/ikelyane-agent/agent.env
+Restart=on-failure
+RestartSec=10s
+
+# Dedicated, unprivileged user — see README.md "Permissions" for what this trades off (notably:
+# some temperature sensors and other processes' details become unreadable; metrics for THIS host
+# and its own filesystems are unaffected).
+User=ikelyane-agent
+Group=ikelyane-agent
+StateDirectory=ikelyane-agent
+StateDirectoryMode=0700
+
+# Hardening. ProtectSystem=strict makes the whole filesystem read-only except ReadWritePaths.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ikelyane-agent
+
+[Install]
+WantedBy=multi-user.target

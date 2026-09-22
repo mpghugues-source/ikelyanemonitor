@@ -23,11 +23,12 @@ React Flow · Prisma 7 · PostgreSQL 17 + TimescaleDB · Zod.
 | i18n dictionaries (439 keys, EN/FR parity enforced by a test) | ✅ done |
 | Telemetry ingestion API — HMAC, Zod, atomic + idempotent storage | ✅ done, tested end to end |
 | Module logic: energy/carbon model, dependency-graph blast radius, SLA helpers | ✅ done (pure, tested) |
-| Dashboard UIs (charts, tables, forms) for each module | ⏳ placeholders; topology shows a React Flow sample |
-| Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations, members, audit log, host registration UI | ✅ done; tested against a real database, both server logic (`npm test`) and browser flows (`npm run test:e2e`) |
-| Alert evaluation, incident lifecycle, notifications | ⏳ next |
+| Dashboard UIs (CRUD, forms) for servers/databases/network/SaaS/topology | ✅ done |
+| Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations (emailed), members, audit log, host registration UI, TOTP two-factor + recovery codes | ✅ done; tested against a real database, both server logic (`npm test`) and browser flows (`npm run test:e2e`) |
+| Alert evaluation, incident lifecycle, notifications (e-mail, Slack, generic webhook) | ✅ done |
+| `ikelyane-agent` (Go) — host metrics: CPU/memory/disks/network/temperature/uptime, signed delivery, offline buffering | ✅ done; see [`agent/`](agent) |
 | AIOps (anomaly detection, RCA), auto-remediation execution | ⏳ next (schema ready) |
-| `ikelyane-agent` (Go/Rust) and SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
+| Agent: SNMP device polling, database monitoring · SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
 
 ## Quick start
 
@@ -53,6 +54,10 @@ npm run create:owner -- --email you@example.com --name "Your Name" --org "Acme"
 
 # 6. Sign in at /en or /fr, then register servers from the Servers page
 #    (or from the command line: npm run provision:host -- --org acme --hostname web-01)
+
+# 7. Build and run the agent on a server you want monitored — see agent/README.md
+cd agent && go build -o ikelyane-agent ./cmd/ikelyane-agent
+IKELYANE_SERVER_URL=http://localhost:3000 IKELYANE_KEY_ID=ikm_… IKELYANE_SECRET=… ./ikelyane-agent
 ```
 
 ## Scripts
@@ -85,6 +90,7 @@ docs/telemetry.md              agent ↔ server protocol
 tests/                         unit + integration (real database)
 tests/e2e/                     Playwright browser tests (real database, production build)
 playwright.config.ts           E2E config: production build, port 3010
+agent/                         ikelyane-agent (Go) — separate module, see agent/README.md
 ```
 
 ## Security model

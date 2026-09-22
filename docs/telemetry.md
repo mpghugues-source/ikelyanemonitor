@@ -1,12 +1,14 @@
 # Telemetry protocol (v1)
 
-How `ikelyane-agent` sends metrics to IkelyaneMonitor. This is the contract to implement in the
-agent (Go/Rust) and the reference for anyone writing a custom collector.
+How `ikelyane-agent` sends metrics to IkelyaneMonitor. This is the contract implemented by the Go
+agent in [`agent/`](../agent) (host metrics only, so far) and the reference for anyone writing a
+custom collector — for SNMP devices and databases, still only a contract until someone implements it.
 
 - Endpoint: `POST /api/v1/telemetry`
 - Body: JSON, at most `TELEMETRY_MAX_BODY_BYTES` (1 MiB by default)
 - Auth: HMAC-SHA256 signature over the **raw body**, one key pair per monitored host
-- Implementation: `src/app/api/v1/telemetry/route.ts` · schemas: `src/lib/telemetry/schemas.ts`
+- Server implementation: `src/app/api/v1/telemetry/route.ts` · schemas: `src/lib/telemetry/schemas.ts`
+- Agent implementation: [`agent/README.md`](../agent/README.md)
 
 ## 1. Credentials
 
