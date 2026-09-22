@@ -729,7 +729,7 @@
       "role": "Role",
       "submit": "Create invitation",
       "submitting": "Creating…",
-      "created": "Invitation created. Copy the link now: it will not be shown again.",
+      "created": "Invitation e-mailed to {email}. You can also copy the link below — it will not be shown again.",
       "linkLabel": "Invitation link",
       "copy": "Copy",
       "copied": "Copied",
@@ -757,6 +757,13 @@
       "invalid_email": "Enter a valid email address.",
       "generic": "Something went wrong. Please try again."
     }
+  },
+  "invitationEmail": {
+    "subject": "You're invited to join {orgName} on IkelyaneMonitor",
+    "body": "{inviterEmail} invited you to join {orgName} on IkelyaneMonitor as {role}.",
+    "cta": "Accept the invitation:",
+    "expires": "This link expires on {date} and can only be used once.",
+    "ignore": "If you were not expecting this invitation, you can safely ignore this e-mail."
   },
   "audit": {
     "title": "Audit log",

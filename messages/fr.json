@@ -729,7 +729,7 @@
       "role": "Rôle",
       "submit": "Créer l'invitation",
       "submitting": "Création…",
-      "created": "Invitation créée. Copiez le lien maintenant : il ne sera plus affiché.",
+      "created": "Invitation envoyée par e-mail à {email}. Vous pouvez aussi copier le lien ci-dessous — il ne sera plus affiché ensuite.",
       "linkLabel": "Lien d'invitation",
       "copy": "Copier",
       "copied": "Copié",
@@ -757,6 +757,13 @@
       "invalid_email": "Saisissez une adresse e-mail valide.",
       "generic": "Une erreur est survenue. Veuillez réessayer."
     }
+  },
+  "invitationEmail": {
+    "subject": "Vous êtes invité(e) à rejoindre {orgName} sur IkelyaneMonitor",
+    "body": "{inviterEmail} vous a invité(e) à rejoindre {orgName} sur IkelyaneMonitor avec le rôle {role}.",
+    "cta": "Accepter l'invitation :",
+    "expires": "Ce lien expire le {date} et ne peut être utilisé qu'une seule fois.",
+    "ignore": "Si vous ne vous attendiez pas à cette invitation, vous pouvez ignorer cet e-mail en toute sécurité."
   },
   "audit": {
     "title": "Journal d'audit",

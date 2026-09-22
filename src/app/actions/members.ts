@@ -1,13 +1,15 @@
 "use server";
 
-import { getLocale } from "next-intl/server";
+import { getFormatter, getLocale, getTranslations } from "next-intl/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Role } from "@/generated/prisma/enums";
 import { redirect } from "@/i18n/navigation";
 import { authorize, getBaseUrl } from "@/lib/auth/dal";
 import { createInvitation, revokeInvitation } from "@/lib/auth/invitations";
 import { changeMemberRole, removeMember } from "@/lib/auth/members";
 import { errorState, type FormState } from "@/lib/form-state";
+import { sendEmail } from "@/lib/notify/email";
 import { getPrisma } from "@/lib/prisma";
 
 /**
@@ -20,6 +22,35 @@ import { getPrisma } from "@/lib/prisma";
 
 const roleSchema = z.enum(["OWNER", "ADMIN", "OPERATOR", "VIEWER"]);
 const idSchema = z.string().min(1).max(64);
+
+/**
+ * Best-effort: the invitation itself is already created and usable via its link (shown once in the
+ * admin's UI, see components/settings/invite-member-form.tsx) before this ever runs — a failed send
+ * must not fail `inviteMemberAction`, only be logged (see the try/catch at its call site).
+ *
+ * Composed here, in the Server Action, rather than in a `lib/` module: `getTranslations`/
+ * `getFormatter` need the request's locale context (`next-intl/server`), which a framework-agnostic
+ * business module must not depend on — see the similar reasoning in
+ * src/modules/alerts/evaluate.ts for why that module builds its own app URL instead of reusing
+ * src/lib/auth/dal.ts's request-bound getBaseUrl().
+ */
+async function sendInvitationEmail(input: { to: string; orgName: string; inviterEmail: string; role: Role; link: string; expiresAt: Date }): Promise<void> {
+  const t = await getTranslations();
+  const format = await getFormatter();
+  const role = t(`roles.${input.role.toLowerCase() as Lowercase<Role>}`);
+
+  const text = [
+    t("invitationEmail.body", { inviterEmail: input.inviterEmail, orgName: input.orgName, role }),
+    "",
+    t("invitationEmail.cta"),
+    input.link,
+    "",
+    t("invitationEmail.expires", { date: format.dateTime(input.expiresAt, { dateStyle: "long" }) }),
+    t("invitationEmail.ignore"),
+  ].join("\n");
+
+  await sendEmail({ to: [input.to], subject: t("invitationEmail.subject", { orgName: input.orgName }), text });
+}
 
 export async function inviteMemberAction(
   _previous: FormState<{ link: string; email: string }>,
@@ -35,6 +66,20 @@ export async function inviteMemberAction(
   if (!result.ok) return errorState(result.error);
 
   const link = `${await getBaseUrl()}/${await getLocale()}/invite/${result.value.token}`;
+
+  try {
+    await sendInvitationEmail({
+      to: parsed.data.email,
+      orgName: auth.value.session.activeOrg?.orgName ?? "",
+      inviterEmail: auth.value.actor.email,
+      role: parsed.data.role,
+      link,
+      expiresAt: result.value.expiresAt,
+    });
+  } catch (error) {
+    console.error("[members] invitation e-mail failed", error);
+  }
+
   revalidatePath("/", "layout");
   return { status: "success", data: { link, email: parsed.data.email } };
 }

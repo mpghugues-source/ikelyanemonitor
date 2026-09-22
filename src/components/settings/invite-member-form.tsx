@@ -42,7 +42,7 @@ export function InviteMemberForm({ roles }: { roles: RoleOption[] }) {
 
           {state.status === "success" && state.data ? (
             <div role="status" className="space-y-2 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-emerald-950">
-              <p className="text-sm font-medium">{t("created")}</p>
+              <p className="text-sm font-medium">{t("created", { email: state.data.email })}</p>
               <div className="flex items-center gap-2">
                 <code data-testid="invitation-link" className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1.5 text-xs">
                   {state.data.link}
