@@ -632,6 +632,20 @@
       "invalid": "Cette invitation est invalide, expirée ou déjà utilisée. Demandez-en une nouvelle.",
       "acceptExisting": "Rejoindre avec votre compte {email}"
     },
+    "totp": {
+      "title": "Authentification à deux facteurs",
+      "subtitleFor": "Connexion en tant que {email}.",
+      "codeLabel": "Code d'authentification",
+      "codePlaceholder": "123456",
+      "submit": "Vérifier",
+      "submitting": "Vérification…",
+      "useRecoveryCode": "Utiliser un code de secours à la place",
+      "useAuthenticatorCode": "Utiliser un code de l'application d'authentification à la place",
+      "recoveryCodeLabel": "Code de secours",
+      "recoveryCodePlaceholder": "XXXX-XXXX-XXXX-XXXX",
+      "backToLogin": "Retour à la connexion",
+      "usedRecoveryCode": "Connecté avec un code de secours. Générez-en de nouveaux depuis votre profil une fois connecté."
+    },
     "fields": {
       "email": "Adresse e-mail",
       "password": "Mot de passe",
@@ -663,7 +677,10 @@
       "unauthenticated": "Votre session a expiré. Veuillez vous reconnecter.",
       "forbidden": "Votre rôle ne permet pas cette action.",
       "no_organization": "Vous n'appartenez à aucune organisation.",
-      "generic": "Une erreur est survenue. Veuillez réessayer."
+      "generic": "Une erreur est survenue. Veuillez réessayer.",
+      "invalid_code": "Ce code est incorrect. Vérifiez l'heure de votre appareil et réessayez.",
+      "too_many_attempts": "Trop de tentatives incorrectes. Veuillez vous reconnecter.",
+      "totp_challenge_expired": "Cette tentative de connexion a expiré. Veuillez vous reconnecter."
     }
   },
   "roles": {
@@ -702,6 +719,48 @@
       "errors": {
         "invalid_current_password": "Le mot de passe actuel est incorrect.",
         "throttled": "Trop de tentatives. Réessayez plus tard."
+      }
+    },
+    "totp": {
+      "title": "Authentification à deux facteurs",
+      "notEnabled": "Non activée. Ajoutez une application d'authentification pour renforcer la connexion.",
+      "enabledSince": "Activée",
+      "enable": "Activer l'authentification à deux facteurs",
+      "setup": {
+        "title": "Scannez ce QR code",
+        "help": "Scannez-le avec une application d'authentification (Google Authenticator, 1Password, Authy…), ou saisissez le code manuellement ci-dessous.",
+        "manualEntry": "Impossible de scanner ? Saisissez ce code manuellement :",
+        "codeLabel": "Code d'authentification",
+        "confirm": "Activer",
+        "confirming": "Activation…",
+        "cancel": "Annuler"
+      },
+      "recoveryCodes": {
+        "title": "Enregistrez vos codes de secours",
+        "help": "Chaque code fonctionne une seule fois, pour vous connecter en cas de perte de votre application d'authentification. Conservez-les en lieu sûr — ils ne seront plus affichés ensuite.",
+        "copy": "Tout copier",
+        "copied": "Copié",
+        "done": "J'ai enregistré ces codes"
+      },
+      "disable": {
+        "title": "Désactiver l'authentification à deux facteurs",
+        "help": "Saisissez votre mot de passe pour confirmer.",
+        "submit": "Désactiver",
+        "submitting": "Désactivation…",
+        "success": "Authentification à deux facteurs désactivée."
+      },
+      "regenerate": {
+        "title": "Générer de nouveaux codes de secours",
+        "help": "Saisissez votre mot de passe. Vos codes de secours actuels cesseront de fonctionner.",
+        "submit": "Générer de nouveaux codes",
+        "submitting": "Génération…"
+      },
+      "errors": {
+        "no_pending_setup": "Recommencez la configuration avant de saisir un code.",
+        "invalid_code": "Ce code est incorrect ou a expiré. Vérifiez l'heure de votre appareil.",
+        "invalid_password": "Le mot de passe est incorrect.",
+        "throttled": "Trop de tentatives. Réessayez plus tard.",
+        "not_enabled": "L'authentification à deux facteurs n'est pas activée."
       }
     }
   },

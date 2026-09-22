@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { ChangePasswordForm } from "@/components/settings/change-password-form";
+import { TwoFactorSettings } from "@/components/settings/two-factor-settings";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireSession } from "@/lib/auth/dal";
@@ -45,6 +46,15 @@ export default async function ProfilePage({ params }: PageProps<"/[locale]/setti
         </CardHeader>
         <CardContent>
           <ChangePasswordForm />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("profile.totp.title")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TwoFactorSettings enabled={Boolean(session.user.totpEnabledAt)} />
         </CardContent>
       </Card>
     </div>

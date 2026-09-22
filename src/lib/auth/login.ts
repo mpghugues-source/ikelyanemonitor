@@ -5,11 +5,14 @@ import { needsRehash, hashPassword, verifyAgainstDummy, verifyPassword } from "@
 import { normalizeEmail } from "@/lib/auth/request";
 import { createSession, purgeDeadSessions } from "@/lib/auth/sessions";
 import { checkLoginThrottle, clearEmailFailures, purgeOldAttempts, recordLoginAttempt } from "@/lib/auth/throttle";
+import { createTotpChallenge } from "@/lib/auth/two-factor";
 
 export type SignInResult =
   | { ok: true; token: string; expiresAt: Date; user: { id: string; email: string; locale: Locale } }
   | { ok: false; error: "invalid_credentials" }
-  | { ok: false; error: "throttled"; retryAfterSeconds: number };
+  | { ok: false; error: "throttled"; retryAfterSeconds: number }
+  /** Password checked out, but the account has 2FA on: no session yet — see src/lib/auth/two-factor.ts. */
+  | { ok: false; error: "totp_required"; challengeToken: string; expiresAt: Date };
 
 /** Upper bound on the password length we are willing to hash (the policy maximum is 128). */
 const MAX_PASSWORD_INPUT = 1024;
@@ -27,7 +30,7 @@ const MAX_PASSWORD_INPUT = 1024;
  */
 export async function signIn(
   db: PrismaClient,
-  input: { email: string; password: string; ip: string | null; userAgent: string | null; now?: Date },
+  input: { email: string; password: string; ip: string | null; userAgent: string | null; nextPath?: string | null; now?: Date },
 ): Promise<SignInResult> {
   const now = input.now ?? new Date();
   const email = normalizeEmail(input.email);
@@ -40,7 +43,7 @@ export async function signIn(
 
   const user = await db.user.findUnique({
     where: { email },
-    select: { id: true, email: true, passwordHash: true, disabledAt: true, locale: true },
+    select: { id: true, email: true, passwordHash: true, disabledAt: true, locale: true, totpEnabledAt: true },
   });
 
   const passwordOk =
@@ -67,6 +70,11 @@ export async function signIn(
   // Upgrade the stored hash if the cost parameters have been raised since it was made.
   const passwordHash = user.passwordHash && needsRehash(user.passwordHash) ? await hashPassword(input.password) : undefined;
   await db.user.update({ where: { id: user.id }, data: { lastLoginAt: now, ...(passwordHash ? { passwordHash } : {}) } });
+
+  if (user.totpEnabledAt) {
+    const challenge = await createTotpChallenge(db, { userId: user.id, ip: input.ip, userAgent: input.userAgent, nextPath: input.nextPath, now });
+    return { ok: false, error: "totp_required", challengeToken: challenge.token, expiresAt: challenge.expiresAt };
+  }
 
   const session = await createSession(db, { userId: user.id, ip: input.ip, userAgent: input.userAgent, now });
   await auditQuietly(db, {

@@ -350,14 +350,61 @@ model User {
   passwordChangedAt DateTime?
   /// Deactivated by an administrator (or the owner of the account): cannot sign in, sessions revoked.
   disabledAt        DateTime?
+  /// Encrypted TOTP secret (src/lib/crypto.ts). Set as soon as setup starts; only meaningful once
+  /// `totpEnabledAt` is also set — a secret alone (setup started but never confirmed) grants nothing.
+  totpSecretEnc     String?
+  /// Null = two-factor authentication is off. Set only once the user proves they can generate a
+  /// valid code (src/lib/auth/two-factor.ts confirmTotpSetup).
+  totpEnabledAt     DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  memberships     Membership[]
-  sessions        Session[]
-  invitationsSent Invitation[]
+  memberships       Membership[]
+  sessions          Session[]
+  invitationsSent   Invitation[]
+  totpChallenges    TotpChallenge[]
+  totpRecoveryCodes TotpRecoveryCode[]
 
   @@map("users")
+}
+
+/// A password was verified; a second factor is now pending. Deliberately separate from `Session`:
+/// a row here can NEVER be mistaken for (or upgraded in place into) an authenticated session — it
+/// is consumed once verification succeeds and a real Session is created instead.
+model TotpChallenge {
+  id             String   @id @default(cuid())
+  userId         String
+  tokenHash      String   @unique
+  /// Where to send the user after verifying (re-validated with safeNextPath when used, not trusted as-is).
+  nextPath       String?
+  /// Wrong codes so far; the challenge is deleted once this reaches the cap (src/lib/auth/constants.ts),
+  /// forcing a fresh sign-in rather than allowing unbounded guesses at a 6-digit code.
+  failedAttempts Int      @default(0)
+  ipAddress      String?
+  userAgent      String?
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("totp_challenges")
+}
+
+/// One-time backup codes for signing in without the authenticator app. Only the hash is stored
+/// (src/lib/auth/sessions.ts hashToken) — high-entropy random data, so a fast hash is enough, same
+/// as session/invitation tokens.
+model TotpRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("totp_recovery_codes")
 }
 
 model Membership {

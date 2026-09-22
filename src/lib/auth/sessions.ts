@@ -28,6 +28,7 @@ export interface SessionUser {
   name: string | null;
   locale: Locale;
   timezone: string;
+  totpEnabledAt: Date | null;
 }
 
 export interface SessionMembership {
@@ -101,6 +102,7 @@ export async function validateSession(db: Db, token: string, now: Date = new Dat
           locale: true,
           timezone: true,
           disabledAt: true,
+          totpEnabledAt: true,
           memberships: {
             orderBy: { createdAt: "asc" },
             select: { role: true, org: { select: { id: true, name: true, slug: true } } },
@@ -144,6 +146,7 @@ export async function validateSession(db: Db, token: string, now: Date = new Dat
       name: session.user.name,
       locale: session.user.locale,
       timezone: session.user.timezone,
+      totpEnabledAt: session.user.totpEnabledAt,
     },
     memberships,
     activeOrg: active,

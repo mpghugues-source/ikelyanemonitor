@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { sessionCookieName } from "@/lib/auth/constants";
+import { sessionCookieName, totpCookieName } from "@/lib/auth/constants";
 
 /**
  * Cookies are only secure over HTTPS. Production is always behind TLS; `AUTH_COOKIE_SECURE=false`
@@ -42,6 +42,34 @@ export async function setSessionCookie(token: string, expiresAt: Date): Promise<
 export async function clearSessionCookie(): Promise<void> {
   const secure = cookiesAreSecure();
   (await cookies()).set(sessionCookieName(secure), "", {
+    httpOnly: true,
+    secure,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+    expires: new Date(0),
+  });
+}
+
+export async function readTotpChallengeToken(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(totpCookieName(cookiesAreSecure()))?.value ?? null;
+}
+
+export async function setTotpChallengeCookie(token: string, expiresAt: Date): Promise<void> {
+  const secure = cookiesAreSecure();
+  (await cookies()).set(totpCookieName(secure), token, {
+    httpOnly: true,
+    secure,
+    sameSite: "lax",
+    path: "/",
+    expires: expiresAt,
+  });
+}
+
+export async function clearTotpChallengeCookie(): Promise<void> {
+  const secure = cookiesAreSecure();
+  (await cookies()).set(totpCookieName(secure), "", {
     httpOnly: true,
     secure,
     sameSite: "lax",

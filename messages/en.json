@@ -632,6 +632,20 @@
       "invalid": "This invitation is invalid, has expired or was already used. Ask for a new one.",
       "acceptExisting": "Join with your account {email}"
     },
+    "totp": {
+      "title": "Two-factor authentication",
+      "subtitleFor": "Signing in as {email}.",
+      "codeLabel": "Authentication code",
+      "codePlaceholder": "123456",
+      "submit": "Verify",
+      "submitting": "Verifying…",
+      "useRecoveryCode": "Use a recovery code instead",
+      "useAuthenticatorCode": "Use an authenticator app code instead",
+      "recoveryCodeLabel": "Recovery code",
+      "recoveryCodePlaceholder": "XXXX-XXXX-XXXX-XXXX",
+      "backToLogin": "Back to sign in",
+      "usedRecoveryCode": "Signed in with a recovery code. Generate new ones from your profile once you're in."
+    },
     "fields": {
       "email": "Email address",
       "password": "Password",
@@ -663,7 +677,10 @@
       "unauthenticated": "Your session has expired. Please sign in again.",
       "forbidden": "Your role does not allow this action.",
       "no_organization": "You are not a member of any organization.",
-      "generic": "Something went wrong. Please try again."
+      "generic": "Something went wrong. Please try again.",
+      "invalid_code": "That code is incorrect. Check the time on your device and try again.",
+      "too_many_attempts": "Too many incorrect attempts. Please sign in again.",
+      "totp_challenge_expired": "This sign-in attempt has expired. Please sign in again."
     }
   },
   "roles": {
@@ -702,6 +719,48 @@
       "errors": {
         "invalid_current_password": "The current password is incorrect.",
         "throttled": "Too many attempts. Try again later."
+      }
+    },
+    "totp": {
+      "title": "Two-factor authentication",
+      "notEnabled": "Not enabled. Add an authenticator app for a stronger sign-in.",
+      "enabledSince": "Enabled",
+      "enable": "Enable two-factor authentication",
+      "setup": {
+        "title": "Scan this QR code",
+        "help": "Scan it with an authenticator app (Google Authenticator, 1Password, Authy…), or enter the code manually below.",
+        "manualEntry": "Can't scan it? Enter this code manually:",
+        "codeLabel": "Authentication code",
+        "confirm": "Activate",
+        "confirming": "Activating…",
+        "cancel": "Cancel"
+      },
+      "recoveryCodes": {
+        "title": "Save your recovery codes",
+        "help": "Each code works once, to sign in if you lose access to your authenticator app. Store them somewhere safe — they will not be shown again.",
+        "copy": "Copy all",
+        "copied": "Copied",
+        "done": "I've saved these codes"
+      },
+      "disable": {
+        "title": "Disable two-factor authentication",
+        "help": "Enter your password to confirm.",
+        "submit": "Disable",
+        "submitting": "Disabling…",
+        "success": "Two-factor authentication disabled."
+      },
+      "regenerate": {
+        "title": "Generate new recovery codes",
+        "help": "Enter your password. Your existing recovery codes will stop working.",
+        "submit": "Generate new codes",
+        "submitting": "Generating…"
+      },
+      "errors": {
+        "no_pending_setup": "Start setup again before entering a code.",
+        "invalid_code": "That code is incorrect or has expired. Check the time on your device.",
+        "invalid_password": "The password is incorrect.",
+        "throttled": "Too many attempts. Try again later.",
+        "not_enabled": "Two-factor authentication is not enabled."
       }
     }
   },

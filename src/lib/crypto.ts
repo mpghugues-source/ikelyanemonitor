@@ -42,6 +42,9 @@ export function decryptSecret(payload: string, aad: string, key: Buffer = master
 /** AAD used for the HMAC secret of an agent key. */
 export const hostSecretAad = (keyId: string): string => `host:${keyId}`;
 
+/** AAD used for a user's TOTP secret. */
+export const totpSecretAad = (userId: string): string => `user:${userId}:totp`;
+
 /**
  * Credentials for a new agent. `keyId` is public (sent in a header, like an access-key id);
  * `secret` is shown to the operator ONCE and stored only encrypted.
