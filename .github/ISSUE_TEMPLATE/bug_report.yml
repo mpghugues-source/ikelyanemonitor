@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in IkelyaneMonitor isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. This project is proprietary and does not accept
+        external pull requests (see CONTRIBUTING.md) — an issue like this one is the right way to
+        reach the maintainers.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Include exact error messages if you have them.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: false
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: e.g. authentication, servers module, telemetry API, dashboard UI
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser/OS, and whether this is `npm run dev` or a production build.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste any error output. This will be formatted as code automatically.
+      render: shell
+    validations:
+      required: false

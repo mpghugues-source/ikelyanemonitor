@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an improvement or a missing capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project is proprietary and does not accept external pull requests (see
+        CONTRIBUTING.md); suggestions are still welcome here and will be triaged by the maintainers.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What are you trying to do that the current UI/API doesn't support well?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Optional — what you'd expect this to look like.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
