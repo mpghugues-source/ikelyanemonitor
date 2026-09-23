@@ -77,6 +77,8 @@ describe.skipIf(!enabled)("alerts and incidents", () => {
     instanceFilter: null,
     operator: "GT" as const,
     threshold: 90,
+    anomalyDetection: false,
+    anomalySensitivity: "MEDIUM" as const,
     durationSec: 120,
     severity: "CRITICAL" as const,
     channels: [],
@@ -194,7 +196,8 @@ describe.skipIf(!enabled)("alerts and incidents", () => {
       expect(resolved?.resolvedBy).toBeNull();
 
       const events = await db.incidentEvent.findMany({ where: { incidentId: resolved?.id }, orderBy: { createdAt: "asc" } });
-      expect(events.map((e) => e.type)).toEqual(["OPENED", "RESOLVED"]);
+      // Root-cause analysis runs right after the incident opens (src/modules/aiops/rca.ts).
+      expect(events.map((e) => e.type)).toEqual(["OPENED", "RCA_GENERATED", "RESOLVED"]);
     });
 
     it("does nothing for a disabled rule", async () => {

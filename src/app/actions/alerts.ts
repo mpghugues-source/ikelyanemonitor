@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { AlertOperator, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
+import { AlertOperator, AnomalySensitivity, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
 import { authorize } from "@/lib/auth/dal";
 import { errorState, type FormState } from "@/lib/form-state";
 import { getPrisma } from "@/lib/prisma";
@@ -33,8 +33,16 @@ const ruleSchema = z.object({
   sourceId: z.string().trim().max(64).optional(),
   metric: z.enum(MetricType),
   instanceFilter: z.string().trim().max(200).optional(),
-  operator: z.enum(AlertOperator),
-  threshold: z.coerce.number().finite(),
+  // Empty operator = no threshold (anomaly-only rule); the business function checks that SOME condition is set.
+  operator: z.union([z.enum(AlertOperator), z.literal("")]).optional().transform((value) => value || null),
+  threshold: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => (value ? Number(value) : null))
+    .refine((value) => value === null || Number.isFinite(value), "must be a number"),
+  anomalyDetection: z.enum(["true"]).optional().transform((value) => value === "true"),
+  anomalySensitivity: z.enum(AnomalySensitivity).default("MEDIUM"),
   durationSec: z.coerce.number().int().min(0).max(86400),
   severity: z.enum(Severity),
   channels: z.array(z.enum(NotificationChannel)).optional(),
@@ -42,6 +50,22 @@ const ruleSchema = z.object({
   webhookUrl: httpUrlSchema,
   cooldownSec: z.coerce.number().int().min(60).max(86400),
 });
+
+/**
+ * Form → business input. The operator select keeps a value even when the threshold field is left
+ * empty: an empty threshold means "no threshold", whatever the operator shows.
+ */
+function toInput(data: z.infer<typeof ruleSchema>) {
+  return {
+    ...data,
+    operator: data.threshold === null ? null : data.operator,
+    description: data.description || null,
+    sourceId: data.sourceId || null,
+    instanceFilter: data.instanceFilter || null,
+    webhookUrl: data.webhookUrl || null,
+    channels: data.channels ?? [],
+  };
+}
 
 function readForm(formData: FormData) {
   return {
@@ -57,14 +81,7 @@ export async function createAlertRuleAction(_previous: FormState, formData: Form
   const parsed = ruleSchema.safeParse(readForm(formData));
   if (!parsed.success) return errorState("generic");
 
-  const result = await createAlertRule(getPrisma(), auth.value.actor, {
-    ...parsed.data,
-    description: parsed.data.description || null,
-    sourceId: parsed.data.sourceId || null,
-    instanceFilter: parsed.data.instanceFilter || null,
-    webhookUrl: parsed.data.webhookUrl || null,
-    channels: parsed.data.channels ?? [],
-  });
+  const result = await createAlertRule(getPrisma(), auth.value.actor, toInput(parsed.data));
   if (!result.ok) return errorState(result.error);
 
   revalidatePath("/", "layout");
@@ -80,14 +97,7 @@ export async function updateAlertRuleAction(_previous: FormState, formData: Form
   const parsed = ruleSchema.safeParse(readForm(formData));
   if (!parsed.success) return errorState("generic");
 
-  const result = await updateAlertRule(getPrisma(), auth.value.actor, id.data, {
-    ...parsed.data,
-    description: parsed.data.description || null,
-    sourceId: parsed.data.sourceId || null,
-    instanceFilter: parsed.data.instanceFilter || null,
-    webhookUrl: parsed.data.webhookUrl || null,
-    channels: parsed.data.channels ?? [],
-  });
+  const result = await updateAlertRule(getPrisma(), auth.value.actor, id.data, toInput(parsed.data));
   if (!result.ok) return errorState(result.error);
 
   revalidatePath("/", "layout");

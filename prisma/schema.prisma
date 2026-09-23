@@ -984,6 +984,14 @@ model Incident {
   rcaConfidence  Float?
   rcaModel       String?
   rcaGeneratedAt DateTime?
+  /// Structured deterministic findings (src/modules/aiops/rca.ts RcaFindings) — the UI translates them.
+  rcaFindings    Json?
+  /// Claude narrative wanted from this time on (null = none pending). Claimed by the worker as a
+  /// lease: pushed into the future while a request is in flight (src/modules/aiops/rca-llm.ts).
+  rcaLlmRequestedAt DateTime?
+  rcaLlmAttempts    Int       @default(0)
+  /// Last failure of the Claude pass (error class/status only, never request content).
+  rcaLlmError       String?
 
   updatedAt DateTime @updatedAt
 
@@ -995,6 +1003,7 @@ model Incident {
   @@index([orgId, status, startedAt(sort: Desc)])
   @@index([orgId, sourceId])
   @@index([ruleId])
+  @@index([rcaLlmRequestedAt])
   @@map("incidents")
 }
 

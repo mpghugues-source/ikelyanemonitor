@@ -74,8 +74,15 @@ export default async function AlertsPage({ params }: PageProps<"/[locale]/alerts
                       {rule.instanceFilter ? ` (${rule.instanceFilter})` : ""}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{t(`metricType.${metricTypeMessageKey(rule.metric)}`)}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {t(`alerts.operators.${rule.operator.toLowerCase()}`)} {rule.threshold}
+                    <TableCell className="space-y-1 text-muted-foreground">
+                      {rule.operator && rule.threshold !== null ? (
+                        <div>{t(`alerts.operators.${rule.operator.toLowerCase()}`)} {rule.threshold}</div>
+                      ) : null}
+                      {rule.anomalyDetection ? (
+                        <Badge variant="outline" data-testid="rule-anomaly-badge">
+                          {t("alerts.anomalyDetection")} · {t(`alerts.sensitivity.${rule.anomalySensitivity.toLowerCase()}`)}
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant={rule.severity === "CRITICAL" ? "destructive" : rule.severity === "WARNING" ? "secondary" : "outline"}>

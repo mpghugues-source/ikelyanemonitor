@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { AlertOperator, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
+import type { AlertOperator, AnomalySensitivity, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
 import { resolveSourceLabels, sourceExists } from "@/modules/alerts/resolve-source";
 import { recordAudit } from "@/lib/auth/audit";
 import type { Actor, Db } from "@/lib/auth/db";
@@ -7,9 +7,9 @@ import { can } from "@/lib/auth/permissions";
 import { fail, ok, type Result } from "@/lib/result";
 
 /**
- * Static-threshold alert rules (`AlertRule.anomalyDetection = false`). AI anomaly detection and
- * auto-remediation are configured in the schema but not wired up yet — this module only manages
- * the threshold half, which is what `src/modules/alerts/evaluate.ts` acts on.
+ * Alert rules: a static threshold, AIOps anomaly detection, or both (both must then hold — see
+ * conditionHolds in src/modules/alerts/evaluate.ts). Auto-remediation is configured in the schema but
+ * not wired up yet.
  */
 export interface AlertRuleRow {
   id: string;
@@ -21,8 +21,11 @@ export interface AlertRuleRow {
   sourceLabel: string | null;
   metric: MetricType;
   instanceFilter: string | null;
-  operator: AlertOperator;
-  threshold: number;
+  /** null = no threshold (anomaly-only rule). */
+  operator: AlertOperator | null;
+  threshold: number | null;
+  anomalyDetection: boolean;
+  anomalySensitivity: AnomalySensitivity;
   durationSec: number;
   severity: Severity;
   channels: NotificationChannel[];
@@ -39,7 +42,7 @@ export async function listAlertRules(db: Db, actor: Actor): Promise<Result<Alert
     orderBy: { name: "asc" },
     select: {
       id: true, name: true, description: true, enabled: true, sourceKind: true, sourceId: true, metric: true,
-      instanceFilter: true, operator: true, threshold: true, durationSec: true, severity: true, channels: true,
+      instanceFilter: true, operator: true, threshold: true, anomalyDetection: true, anomalySensitivity: true, durationSec: true, severity: true, channels: true,
       notifyEmails: true, webhookUrl: true, cooldownSec: true, createdAt: true,
     },
   });
@@ -54,12 +57,8 @@ export async function listAlertRules(db: Db, actor: Actor): Promise<Result<Alert
   for (const [kind, ids] of idsByKind) labelsByKind.set(kind, await resolveSourceLabels(db, actor.orgId, kind, ids));
 
   return ok(
-    rows.map(({ operator, threshold, ...row }) => ({
+    rows.map((row) => ({
       ...row,
-      // operator/threshold are always set together for a static-threshold rule (anomalyDetection=false is the
-      // only kind this module creates); the DB columns are nullable to also support a future anomaly-only rule.
-      operator: operator ?? "GT",
-      threshold: threshold ?? 0,
       sourceLabel: row.sourceId ? (labelsByKind.get(row.sourceKind)?.get(row.sourceId) ?? null) : null,
     })),
   );
@@ -73,8 +72,11 @@ export interface AlertRuleInput {
   sourceId: string | null;
   metric: MetricType;
   instanceFilter: string | null;
-  operator: AlertOperator;
-  threshold: number;
+  /** Set together, or both null for an anomaly-only rule. */
+  operator: AlertOperator | null;
+  threshold: number | null;
+  anomalyDetection: boolean;
+  anomalySensitivity: AnomalySensitivity;
   durationSec: number;
   severity: Severity;
   channels: NotificationChannel[];
@@ -83,10 +85,19 @@ export interface AlertRuleInput {
   cooldownSec: number;
 }
 
-export type AlertRuleWriteError = "forbidden" | "invalid_source" | "not_found";
+export type AlertRuleWriteError = "forbidden" | "invalid_source" | "not_found" | "condition_required";
+
+/** A rule needs a complete threshold, anomaly detection, or both (mirrors the alert_rules CHECK constraint). */
+function conditionError(input: AlertRuleInput): "condition_required" | null {
+  const hasThreshold = input.operator !== null && input.threshold !== null && Number.isFinite(input.threshold);
+  const halfThreshold = (input.operator === null) !== (input.threshold === null);
+  return halfThreshold || (!hasThreshold && !input.anomalyDetection) ? "condition_required" : null;
+}
 
 export async function createAlertRule(db: PrismaClient, actor: Actor, input: AlertRuleInput): Promise<Result<{ id: string }, AlertRuleWriteError>> {
   if (!can(actor.role, "alerts:write")) return fail("forbidden");
+  const invalid = conditionError(input);
+  if (invalid) return fail(invalid);
   if (input.sourceId && !(await sourceExists(db, actor.orgId, input.sourceKind, input.sourceId))) return fail("invalid_source");
 
   return db.$transaction(async (tx) => {
@@ -107,6 +118,8 @@ export async function createAlertRule(db: PrismaClient, actor: Actor, input: Ale
 
 export async function updateAlertRule(db: PrismaClient, actor: Actor, id: string, input: AlertRuleInput): Promise<Result<true, AlertRuleWriteError>> {
   if (!can(actor.role, "alerts:write")) return fail("forbidden");
+  const invalid = conditionError(input);
+  if (invalid) return fail(invalid);
   if (input.sourceId && !(await sourceExists(db, actor.orgId, input.sourceKind, input.sourceId))) return fail("invalid_source");
 
   return db.$transaction(async (tx) => {

@@ -47,9 +47,8 @@ test.describe("invitations", () => {
     await expect(guest.getByRole("heading", { name: `Join ${org.name}` })).toBeVisible();
     await expect(guest.getByText("invited with the role Operator")).toBeVisible();
 
-    // A weak password is refused with a clear message and does not consume the invitation.
-    // (React resets uncontrolled fields after every submission, success or not — re-fill "name" each time,
-    // as a real person filling the form again would.)
+    // A weak password is refused with a clear message and does not consume the invitation. What the
+    // person typed is kept after a refusal (ActionForm only resets the form after a success).
     await skipBrowserValidation(guest); // the server must refuse it too, not only the browser's minlength
     await guest.getByLabel("Full name").fill("New Comer");
     await guest.getByLabel("Password", { exact: true }).fill("short");
@@ -57,7 +56,10 @@ test.describe("invitations", () => {
     await expect(formError(guest)).toContainText("at least 12 characters");
     expect(await query(`SELECT 1 FROM users WHERE email = $1`, [email])).toHaveLength(0);
 
+    await expect(guest.getByLabel("Full name")).toHaveValue("New Comer");
+
     // An empty name is refused server-side too, not only by the input's `required` attribute.
+    await guest.getByLabel("Full name").fill("");
     await guest.getByLabel("Password", { exact: true }).fill(PASSWORD);
     await guest.getByRole("button", { name: "Accept invitation" }).click();
     await expect(formError(guest)).toContainText("Fill in all required fields.");

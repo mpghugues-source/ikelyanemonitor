@@ -24,6 +24,11 @@ Read `README.md` (status, layout, security model) and `docs/telemetry.md` (agent
   functions take an `Actor` built from the session (never from form input), re-check `can(role, permission)`
   and scope every query by `actor.orgId`. New permissions go in `src/lib/auth/permissions.ts` AND its test
   matrix (`tests/auth/permissions.test.ts`), which fails on any unreviewed change of privilege.
+- Forms bound to Server Actions use `ActionForm` (src/components/forms/action-form.tsx): it submits through a
+  transition so a server-side validation error does NOT wipe what the user typed (React 19 resets a form after
+  every `action` run); the form is reset only on success.
+- Background work (synthetic checks, Claude RCA narratives) runs in `npm run worker` (scripts/worker.ts), never in
+  a request. Work units are claimed atomically so several workers can run side by side.
 - Expected failures are returned as `Result` (`src/lib/result.ts`) with a stable error code that the UI
   translates (`auth.errors.*`, `members.errors.*`…); never return sentences from the server.
 - Inside a Prisma `$transaction`, `return fail(...)` still COMMITS earlier writes: throw to roll back.

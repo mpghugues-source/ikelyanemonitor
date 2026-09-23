@@ -11,7 +11,7 @@ import { sslDaysLeft } from "@/modules/saas/sla";
  * telemetry takes, so rules on ENDPOINT_AVAILABLE / ENDPOINT_RESPONSE_MS / ENDPOINT_SSL_DAYS_LEFT
  * open and auto-resolve incidents like any other metric.
  *
- * Started by scripts/check-runner.ts as its own long-running process (not inside Next.js request
+ * Started by scripts/worker.ts as its own long-running process (not inside Next.js request
  * handling). Several runners may run at once: claiming is atomic (see claimDueChecks).
  */
 

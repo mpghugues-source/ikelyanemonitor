@@ -3,6 +3,7 @@ import { IncidentEventType, IncidentStatus, type MetricSource, type MetricType, 
 import type { Actor, Db } from "@/lib/auth/db";
 import { can } from "@/lib/auth/permissions";
 import { fail, ok, type Result } from "@/lib/result";
+import { refreshIncidentRca, type RcaFindings } from "@/modules/aiops/rca";
 
 export interface IncidentEventRow {
   id: string;
@@ -28,6 +29,17 @@ export interface IncidentRow {
   acknowledgedAt: Date | null;
   resolvedAt: Date | null;
   resolutionNote: string | null;
+  anomalyScore: number | null;
+  rca: {
+    findings: RcaFindings | null;
+    confidence: number | null;
+    summaryEn: string | null;
+    summaryFr: string | null;
+    model: string | null;
+    /** A Claude narrative is queued or being written. */
+    narrativePending: boolean;
+    narrativeFailed: boolean;
+  };
   events: IncidentEventRow[];
 }
 
@@ -36,6 +48,7 @@ const EVENTS_PER_INCIDENT = 30;
 const INCIDENT_SELECT = {
   id: true, title: true, severity: true, status: true, sourceKind: true, sourceLabel: true, metric: true,
   triggerValue: true, peakValue: true, startedAt: true, acknowledgedAt: true, resolvedAt: true, resolutionNote: true,
+  anomalyScore: true, rcaFindings: true, rcaConfidence: true, rcaSummaryEn: true, rcaSummaryFr: true, rcaModel: true, rcaLlmRequestedAt: true, rcaLlmError: true,
   events: { orderBy: { createdAt: "asc" as const }, take: EVENTS_PER_INCIDENT, select: { id: true, type: true, message: true, actorId: true, data: true, createdAt: true } },
 } satisfies Prisma.IncidentSelect;
 
@@ -47,8 +60,17 @@ async function toRows(db: Db, incidents: IncidentPayload[]): Promise<IncidentRow
   const users = actorIds.length ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, email: true } }) : [];
   const emailById = new Map(users.map((user) => [user.id, user.email]));
 
-  return incidents.map((incident) => ({
+  return incidents.map(({ rcaFindings, rcaConfidence, rcaSummaryEn, rcaSummaryFr, rcaModel, rcaLlmRequestedAt, rcaLlmError, ...incident }) => ({
     ...incident,
+    rca: {
+      findings: (rcaFindings as unknown as RcaFindings | null) ?? null,
+      confidence: rcaConfidence,
+      summaryEn: rcaSummaryEn,
+      summaryFr: rcaSummaryFr,
+      model: rcaModel,
+      narrativePending: rcaLlmRequestedAt !== null,
+      narrativeFailed: rcaLlmRequestedAt === null && rcaLlmError !== null && !rcaSummaryEn,
+    },
     events: incident.events.map((event) => ({ ...event, actorEmail: event.actorId ? (emailById.get(event.actorId) ?? null) : null })),
   }));
 }
@@ -132,4 +154,16 @@ export async function addIncidentNote(db: PrismaClient, actor: Actor, id: string
     await tx.incidentEvent.create({ data: { incidentId: id, type: IncidentEventType.NOTE, actorId: actor.userId, message } });
     return ok(true as const);
   });
+}
+
+/**
+ * Recompute the root-cause analysis now (e.g. after the dependency map was edited) and, when Claude is
+ * enabled, queue a fresh narrative. Same permission as acknowledging: an operational action.
+ */
+export async function reanalyzeIncident(db: PrismaClient, actor: Actor, id: string): Promise<Result<true, "forbidden" | "not_found">> {
+  if (!can(actor.role, "incidents:acknowledge")) return fail("forbidden");
+  const exists = await db.incident.findFirst({ where: { id, orgId: actor.orgId }, select: { id: true } });
+  if (!exists) return fail("not_found");
+  await refreshIncidentRca(db, actor.orgId, id, new Date(), { force: true });
+  return ok(true as const);
 }

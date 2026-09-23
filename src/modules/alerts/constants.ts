@@ -1,4 +1,4 @@
-import { AlertOperator, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
+import { AlertOperator, AnomalySensitivity, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
 
 /** Client-safe: no Node builtins, no database access — usable from "use client" form components. */
 
@@ -14,6 +14,8 @@ export const NOTIFICATION_CHANNELS: readonly NotificationChannel[] = [
 ];
 
 /** Only sources that currently produce time-series metrics (see docs/telemetry.md). */
+export const ANOMALY_SENSITIVITIES: readonly AnomalySensitivity[] = [AnomalySensitivity.LOW, AnomalySensitivity.MEDIUM, AnomalySensitivity.HIGH];
+
 export const ALERT_SOURCE_KINDS: readonly MetricSource[] = [
   MetricSource.HOST, MetricSource.NETWORK_DEVICE, MetricSource.DATABASE, MetricSource.ENDPOINT,
 ];

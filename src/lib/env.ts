@@ -34,7 +34,7 @@ const envSchema = z.object({
   ALERTS_EMAIL_FROM: z.string().trim().min(1).default("IkelyaneMonitor <noreply@ikelyane.com>"),
 
   /**
-   * Synthetic check runner (scripts/check-runner.ts). By default checks may only reach PUBLIC
+   * Synthetic check runner (scripts/worker.ts). By default checks may only reach PUBLIC
    * addresses — tenants must not be able to probe the platform's own network (see
    * src/modules/saas/runner/target-guard.ts). Set to "true" only on a single-tenant, self-hosted
    * install that deliberately monitors its own LAN.
@@ -42,6 +42,13 @@ const envSchema = z.object({
   CHECKS_ALLOW_PRIVATE_TARGETS: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   /** Probes a runner keeps in flight at once. */
   CHECK_RUNNER_CONCURRENCY: z.coerce.number().int().min(1).max(500).default(20),
+
+  /**
+   * AIOps root-cause narratives by Claude (src/modules/aiops/rca-llm.ts) are enabled by setting
+   * ANTHROPIC_API_KEY (read by the Anthropic SDK itself, never by this app). Cost guard: Claude calls
+   * per hour and per worker. AIOPS_LLM_MODEL overrides the model (default claude-opus-5).
+   */
+  AIOPS_LLM_MAX_PER_HOUR: z.coerce.number().int().min(1).max(10_000).default(60),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

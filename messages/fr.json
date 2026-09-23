@@ -529,8 +529,12 @@
       "forbidden": "Votre rôle ne permet pas cette action.",
       "invalid_source": "La source sélectionnée ne fait pas partie de votre organisation.",
       "not_found": "Cette règle n'existe plus.",
-      "generic": "Une erreur est survenue. Veuillez réessayer."
-    }
+      "generic": "Une erreur est survenue. Veuillez réessayer.",
+      "condition_required": "Définissez un seuil, activez la détection d'anomalies, ou les deux."
+    },
+    "noThreshold": "Aucun seuil (détection d'anomalies seule)",
+    "thresholdHelp": "Laissez vide pour une règle d'anomalie seule. Avec les deux, la valeur doit être anormale ET franchir le seuil.",
+    "anomalyHelp": "Signale les valeurs éloignées de ce qui est normal pour cette série à cette heure de la journée (appris sur les 7 derniers jours). Il faut une trentaine de points avant qu'elle ne se déclenche."
   },
   "aiops": {
     "title": "AIOps",
@@ -543,7 +547,34 @@
     "generatedBy": "Généré par {model}",
     "correlatedEvents": "Événements corrélés",
     "suggestedActions": "Actions suggérées",
-    "aiGenerated": "Généré par IA : vérifiez avant d'agir."
+    "aiGenerated": "Généré par IA : vérifiez avant d'agir.",
+    "verdict": {
+      "symptom": "Probablement un symptôme : une dépendance de {node} est elle aussi en échec.",
+      "root_cause": "Probablement la cause racine : des composants qui dépendent de {node} sont eux aussi en échec.",
+      "isolated": "Aucun échec lié sur la carte des dépendances : problème probablement local à {node}.",
+      "not_mapped": "Cette source n'est pas sur la carte des dépendances : seule la corrélation temporelle est disponible. L'ajouter à la topologie améliore l'analyse."
+    },
+    "probableOrigin": "Origine probable",
+    "alsoFailing": "En échec à cause de lui",
+    "blastRadius": "{count, plural, one {# composant en dépend} other {# composants en dépendent}} : {labels}",
+    "sameSource": "Autres alertes sur la même source",
+    "correlatedNoLink": "Démarrés à peu près en même temps (aucune dépendance connue)",
+    "offsetBefore": "{duration} avant",
+    "offsetAfter": "{duration} après",
+    "offsetSame": "au même moment",
+    "firstToStart": "Cet incident a démarré en premier parmi les incidents corrélés.",
+    "confidenceValue": "Confiance : {value}",
+    "deterministic": "Calculée à partir de la carte des dépendances et de la corrélation temporelle.",
+    "narrativePending": "Synthèse IA en préparation…",
+    "narrativeFailed": "La synthèse IA n'a pas pu être générée ; l'analyse ci-dessus reste valable.",
+    "reanalyze": "Relancer l'analyse",
+    "reanalyzing": "Analyse…",
+    "noAnalysis": "Aucune analyse pour le moment.",
+    "errors": {
+      "forbidden": "Votre rôle ne permet pas cette action.",
+      "not_found": "Cet incident n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    }
   },
   "remediation": {
     "title": "Auto-remédiation",

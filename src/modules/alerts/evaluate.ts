@@ -1,6 +1,9 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import { AlertOperator, IncidentEventType, IncidentStatus } from "@/generated/prisma/enums";
+import { AlertOperator, type AnomalySensitivity, IncidentEventType, IncidentStatus } from "@/generated/prisma/enums";
 import type { MetricRow } from "@/lib/telemetry/metrics";
+import { assess, type AnomalyVerdict, type Baseline } from "@/modules/aiops/anomaly";
+import { loadBaseline } from "@/modules/aiops/baseline";
+import { analyzeAfterOpen } from "@/modules/aiops/rca";
 import { AUTO_RESOLUTION_NOTE } from "@/modules/alerts/constants";
 import { dispatchIncidentNotification, type NotifiableIncident, type NotifiableRule, type NotificationOutcome, shouldRenotify } from "@/modules/alerts/notify";
 import { resolveSourceLabels } from "@/modules/alerts/resolve-source";
@@ -34,12 +37,45 @@ export interface MetricPoint {
  * `pointsDesc` must be ordered newest first.
  */
 export function breachingSince(pointsDesc: readonly MetricPoint[], operator: AlertOperator, threshold: number): Date | null {
+  return streakSince(pointsDesc, (value) => breaches(operator, value, threshold));
+}
+
+/** breachingSince generalised to any per-value condition (threshold, anomaly, or both). */
+export function streakSince(pointsDesc: readonly MetricPoint[], holds: (value: number) => boolean): Date | null {
   let since: Date | null = null;
   for (const point of pointsDesc) {
-    if (!breaches(operator, point.value, threshold)) break;
+    if (!holds(point.value)) break;
     since = point.time;
   }
   return since;
+}
+
+export interface RuleCondition {
+  threshold: { operator: AlertOperator; value: number } | null;
+  /** Present when the rule uses anomaly detection AND a baseline exists (null baseline = still learning). */
+  anomaly: { baseline: Baseline | null; sensitivity: AnomalySensitivity } | null;
+}
+
+/**
+ * Whether one value satisfies a rule. With both a threshold and anomaly detection, BOTH must hold: the
+ * threshold then acts as a floor that filters out statistically unusual but harmless values (a CPU
+ * going from 2 % to 9 % is an anomaly, rarely an incident). Use two rules for "either".
+ * While the detector is still learning (no baseline), an anomaly condition never holds.
+ */
+export function conditionHolds(condition: RuleCondition, value: number): boolean {
+  if (condition.threshold && !breaches(condition.threshold.operator, value, condition.threshold.value)) return false;
+  if (condition.anomaly) {
+    if (!condition.anomaly.baseline) return false;
+    if (!assess(value, condition.anomaly.baseline, condition.anomaly.sensitivity).anomalous) return false;
+  }
+  return condition.threshold !== null || condition.anomaly !== null;
+}
+
+/** Peak tracking direction: the threshold's, or the anomaly's (above normal → max, below → min). */
+function worstFor(condition: RuleCondition, verdict: AnomalyVerdict | null, a: number, b: number): number {
+  if (condition.threshold) return worstValue(condition.threshold.operator, a, b);
+  if (verdict) return verdict.z >= 0 ? Math.max(a, b) : Math.min(a, b);
+  return b;
 }
 
 /** Has the breach lasted at least `durationSec` (the rule's flap-protection window) as of `now`? */
@@ -85,16 +121,16 @@ async function notify(db: PrismaClient, rule: NotifiableRule, incident: Notifiab
 }
 
 /**
- * Re-evaluate every enabled static-threshold rule against the metric points just stored by one
- * telemetry ingestion, opening/updating/auto-resolving incidents as needed, and dispatching
+ * Re-evaluate every enabled rule (static threshold and/or AIOps anomaly detection, see conditionHolds)
+ * against the metric points just stored by one telemetry ingestion or synthetic check, opening/updating/
+ * auto-resolving incidents as needed, running root-cause analysis when one opens, and dispatching
  * notifications (email/Slack/webhook — see src/modules/alerts/notify.ts) on open, on
  * auto-resolution, and again while an incident stays open once `cooldownSec` has elapsed since the
  * last one.
  *
  * Best-effort by design: called AFTER the ingestion transaction commits (see the route handler),
- * wrapped in try/catch there — a bug here must never make telemetry storage fail. AI anomaly
- * detection (`AlertRule.anomalyDetection`) is not implemented yet: rules only fire against a static
- * threshold. TEAMS/SMS/PUSH channels are configurable but not dispatched (see notify.ts).
+ * wrapped in try/catch there — a bug here must never make telemetry storage fail. TEAMS/SMS/PUSH
+ * channels are configurable but not dispatched (see notify.ts).
  */
 export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, rows: readonly MetricRow[], now: Date): Promise<void> {
   if (rows.length === 0) return;
@@ -112,9 +148,7 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
     where: {
       orgId,
       enabled: true,
-      anomalyDetection: false,
-      operator: { not: null },
-      threshold: { not: null },
+      OR: [{ anomalyDetection: true }, { operator: { not: null }, threshold: { not: null } }],
       sourceKind: { in: [...new Set(points.map((p) => p.sourceKind))] },
       metric: { in: [...new Set(points.map((p) => p.metric))] },
     },
@@ -130,11 +164,14 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
         (rule.instanceFilter === null || rule.instanceFilter === point.instance),
     );
     for (const rule of matching) {
-      // Guaranteed non-null by the `findMany` where-clause above; Prisma's return type stays
-      // nullable regardless, since it can't reflect a runtime filter.
-      if (rule.operator === null || rule.threshold === null) continue;
-      const operator = rule.operator;
-      const threshold = rule.threshold;
+      const condition: RuleCondition = {
+        threshold: rule.operator !== null && rule.threshold !== null ? { operator: rule.operator, value: rule.threshold } : null,
+        anomaly: rule.anomalyDetection
+          ? { baseline: await loadBaseline(db, { orgId, sourceKind: point.sourceKind, sourceId: point.sourceId, metric: point.metric, instance: point.instance ?? "" }, rule.durationSec, now), sensitivity: rule.anomalySensitivity }
+          : null,
+      };
+      if (!condition.threshold && !condition.anomaly) continue;
+      const verdict = condition.anomaly?.baseline ? assess(point.value, condition.anomaly.baseline, condition.anomaly.sensitivity) : null;
 
       const history = await db.metricEntry.findMany({
         where: { orgId, sourceKind: point.sourceKind, sourceId: point.sourceId, metric: point.metric, instance: point.instance, time: { lte: now } },
@@ -142,7 +179,7 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
         take: HISTORY_LOOKBACK_POINTS,
         select: { time: true, value: true },
       });
-      const sustained = isSustained(breachingSince(history, operator, threshold), rule.durationSec, now);
+      const sustained = isSustained(streakSince(history, (value) => conditionHolds(condition, value)), rule.durationSec, now);
 
       // Known simplification: matched on (rule, source, metric) — NOT instance — because Incident
       // has no `instance` column. A wildcard rule (instanceFilter = null) that breaches on several
@@ -166,6 +203,7 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
             metric: point.metric,
             triggerValue: point.value,
             peakValue: point.value,
+            anomalyScore: verdict?.score ?? null,
             startedAt: now,
           },
         });
@@ -173,7 +211,15 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
           data: {
             incidentId: incident.id,
             type: IncidentEventType.OPENED,
-            data: { operator, threshold, value: point.value, instance: point.instance },
+            data: {
+              operator: condition.threshold?.operator ?? null,
+              threshold: condition.threshold?.value ?? null,
+              value: point.value,
+              instance: point.instance,
+              ...(verdict && condition.anomaly?.baseline
+                ? { anomaly: { z: verdict.z, score: verdict.score, baselineMedian: condition.anomaly.baseline.median, baselineScale: condition.anomaly.baseline.scale, baselinePoints: condition.anomaly.baseline.points } }
+                : {}),
+            },
           },
         });
         try {
@@ -181,10 +227,20 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
         } catch (error) {
           console.error("[alerts] notification failed", error);
         }
+        // Best-effort, like notifications: an RCA problem must never undo or block the incident.
+        try {
+          await analyzeAfterOpen(db, orgId, incident.id, now);
+        } catch (error) {
+          console.error("[aiops] root-cause analysis failed", error);
+        }
       } else if (sustained && open) {
         const updated = await db.incident.update({
           where: { id: open.id },
-          data: { triggerValue: point.value, peakValue: worstValue(operator, open.peakValue ?? point.value, point.value) },
+          data: {
+            triggerValue: point.value,
+            peakValue: worstFor(condition, verdict, open.peakValue ?? point.value, point.value),
+            ...(verdict ? { anomalyScore: Math.max(open.anomalyScore ?? 0, verdict.score) } : {}),
+          },
         });
         const lastNotified = await db.incidentEvent.findFirst({ where: { incidentId: open.id, type: IncidentEventType.NOTIFIED }, orderBy: { createdAt: "desc" } });
         if (shouldRenotify(lastNotified?.createdAt ?? null, rule.cooldownSec, now)) {

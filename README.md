@@ -26,9 +26,10 @@ React Flow · Prisma 7 · PostgreSQL 17 + TimescaleDB · Zod.
 | Dashboard UIs (CRUD, forms) for servers/databases/network/SaaS/topology | ✅ done |
 | Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations (emailed), members, audit log, host registration UI, TOTP two-factor + recovery codes | ✅ done; tested against a real database, both server logic (`npm test`) and browser flows (`npm run test:e2e`) |
 | Alert evaluation, incident lifecycle, notifications (e-mail, Slack, generic webhook) | ✅ done |
-| Synthetic HTTP(S) checks — runner process (`npm run checks:runner`): status/body assertions, redirects, TLS expiry, availability 24 h / 30 days vs SLA, "check now", SSRF-guarded, alerts on `ENDPOINT_*` metrics | ✅ done |
+| Synthetic HTTP(S) checks — run by the background worker (`npm run worker`): status/body assertions, redirects, TLS expiry, availability 24 h / 30 days vs SLA, "check now", SSRF-guarded, alerts on `ENDPOINT_*` metrics | ✅ done |
 | `ikelyane-agent` (Go) — host metrics (CPU/memory/disks/network/temperature/uptime) + SNMP v1/v2c/v3 device polling (fetches its assignment + credentials from the server) + PostgreSQL/MySQL/MariaDB monitoring (connections, QPS, cache, deadlocks, replication, storage, engine-normalized slow queries), signed delivery, offline buffering | ✅ done; see [`agent/`](agent) |
-| AIOps (anomaly detection, RCA), auto-remediation execution | ⏳ next (schema ready) |
+| AIOps — anomaly detection (robust baseline with daily seasonality, per-rule sensitivity, combinable with a threshold) and root-cause analysis (dependency map + time correlation, explained in the UI; optional Claude narrative EN/FR when `ANTHROPIC_API_KEY` is set) | ✅ done |
+| Auto-remediation execution | ⏳ next (schema ready) |
 | Agent: MongoDB/Redis/SQL Server · SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
 
 ## Quick start
@@ -56,8 +57,8 @@ npm run create:owner -- --email you@example.com --name "Your Name" --org "Acme"
 # 6. Sign in at /en or /fr, then register servers from the Servers page
 #    (or from the command line: npm run provision:host -- --org acme --hostname web-01)
 
-# 7. Start the synthetic check runner (probes the endpoints of the SaaS page) — a separate process
-npm run checks:runner
+# 7. Start the background worker (synthetic checks; optional Claude RCA narratives) — a separate process
+npm run worker
 
 # 8. Build and run the agent on a server you want monitored — see agent/README.md
 cd agent && go build -o ikelyane-agent ./cmd/ikelyane-agent
@@ -71,7 +72,7 @@ IKELYANE_SERVER_URL=http://localhost:3000 IKELYANE_KEY_ID=ikm_… IKELYANE_SECRE
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. With `DATABASE_URL` and `IKELYANE_SECRET_KEY` set it **also** runs the integration tests against a real TimescaleDB |
 | `npm run test:e2e` | Playwright browser tests (Chromium) against a **production build**: run `npm run build` first, then set `DATABASE_URL` and `IKELYANE_SECRET_KEY` and run this — it starts its own server on port 3010 |
-| `npm run checks:runner` | Long-running synthetic check runner (same `DATABASE_URL`/`IKELYANE_SECRET_KEY` as the app). Several may run side by side: each due check is claimed by exactly one (`FOR UPDATE SKIP LOCKED`). `CHECK_RUNNER_CONCURRENCY` (default 20) |
+| `npm run worker` | Long-running background worker (same `DATABASE_URL`/`IKELYANE_SECRET_KEY` as the app): synthetic checks and, when `ANTHROPIC_API_KEY` is set, Claude RCA narratives. Several may run side by side: each unit of work is claimed by exactly one. `CHECK_RUNNER_CONCURRENCY` (default 20), `AIOPS_LLM_MAX_PER_HOUR` (default 60) |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
 | `npm run db:migrate` · `db:status` · `db:generate` | Prisma migrations / client |
 | `npm run create:owner` | Create the first organization + owner account (initial password printed once) |
@@ -117,11 +118,19 @@ agent/                         ikelyane-agent (Go) — separate module, see agen
   CGNAT, IPv4-mapped IPv6 etc. are refused (`src/modules/saas/runner/target-guard.ts`). Only a
   single-tenant install monitoring its own LAN should set `CHECKS_ALLOW_PRIVATE_TARGETS=true`.
   Configured request headers are never forwarded to another origin on redirect.
+- **AIOps and external AI:** anomaly detection and root-cause analysis run locally. Nothing is sent to
+  an AI provider unless `ANTHROPIC_API_KEY` is set; then, for each analyzed incident, the worker sends
+  Claude the incident (title, severity, source label, metric and values), the computed findings (labels
+  of related sources and incidents) and last-hour statistics of the metric — never credentials,
+  identifiers of agents, or request/response bodies (`src/modules/aiops/rca-llm.ts`). Calls are capped
+  per hour (`AIOPS_LLM_MAX_PER_HOUR`) and only made from the background worker.
 - **Bounded input:** body size, array lengths, string lengths, value ranges and timestamp window are
   all enforced before anything is stored.
 
 ## Known limitations
 
+- Anomaly baselines model DAILY seasonality only (same time of day over the last 7 days), not weekly
+  patterns such as quiet weekends; they need ~30 points of history before a rule can fire.
 - Synthetic checks run from wherever the runner runs: `EndpointCheck.regions` and multi-step
   `syntheticScript` scenarios are stored but not executed yet. When TLS verification fails (e.g. an
   expired certificate), the check reports `tls` with the reason but the certificate's dates are not

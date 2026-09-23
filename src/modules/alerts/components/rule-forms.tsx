@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { ALERT_OPERATORS, ALERT_SEVERITIES, ALERT_SOURCE_KINDS, METRICS_BY_SOURCE_KIND, metricTypeMessageKey, NOTIFICATION_CHANNELS, sourceKindMessageKey } from "@/modules/alerts/constants";
+import { ALERT_OPERATORS, ALERT_SEVERITIES, ANOMALY_SENSITIVITIES, ALERT_SOURCE_KINDS, METRICS_BY_SOURCE_KIND, metricTypeMessageKey, NOTIFICATION_CHANNELS, sourceKindMessageKey } from "@/modules/alerts/constants";
 import type { AlertRuleRow } from "@/modules/alerts/rules";
 
 const NAMESPACES = ["alertsAdmin.errors", "auth.errors"];
@@ -85,15 +85,33 @@ function RuleFields({ rule, sources }: { rule?: AlertRuleRow; sources: SourceOpt
 
       <div className="space-y-2">
         <Label htmlFor="operator">{t("alerts.operator")}</Label>
-        <NativeSelect id="operator" name="operator" defaultValue={rule?.operator ?? "GT"}>
+        <NativeSelect id="operator" name="operator" defaultValue={rule ? (rule.operator ?? "") : "GT"}>
           {ALERT_OPERATORS.map((operator) => (
             <option key={operator} value={operator}>{t(`alerts.operators.${operator.toLowerCase()}`)}</option>
           ))}
+          <option value="">{t("alertsAdmin.noThreshold")}</option>
         </NativeSelect>
       </div>
       <div className="space-y-2">
         <Label htmlFor="threshold">{t("alerts.threshold")}</Label>
-        <Input id="threshold" name="threshold" type="number" step="any" required defaultValue={rule?.threshold} />
+        <Input id="threshold" name="threshold" type="number" step="any" defaultValue={rule?.threshold ?? undefined} />
+        <p className="text-xs text-muted-foreground">{t("alertsAdmin.thresholdHelp")}</p>
+      </div>
+
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <Checkbox name="anomalyDetection" value="true" defaultChecked={rule?.anomalyDetection ?? false} data-testid="rule-anomaly" />
+          {t("alerts.anomalyDetection")}
+        </label>
+        <p className="text-xs text-muted-foreground">{t("alertsAdmin.anomalyHelp")}</p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="anomalySensitivity">{t("alerts.anomalySensitivity")}</Label>
+        <NativeSelect id="anomalySensitivity" name="anomalySensitivity" defaultValue={rule?.anomalySensitivity ?? "MEDIUM"}>
+          {ANOMALY_SENSITIVITIES.map((sensitivity) => (
+            <option key={sensitivity} value={sensitivity}>{t(`alerts.sensitivity.${sensitivity.toLowerCase()}`)}</option>
+          ))}
+        </NativeSelect>
       </div>
 
       <div className="space-y-2">

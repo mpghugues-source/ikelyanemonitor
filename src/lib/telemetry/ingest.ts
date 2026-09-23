@@ -88,8 +88,7 @@ export async function ingestTelemetry(
 
   // Best-effort, AFTER the storage transaction has committed: alert evaluation must never make
   // telemetry ingestion fail, and it reads back the metric history it needs (so it must see what
-  // was just written). AI anomaly detection and channel dispatch are not implemented yet — see
-  // src/modules/alerts/evaluate.ts.
+  // was just written) — see src/modules/alerts/evaluate.ts.
   try {
     await evaluateIngestedMetrics(db, agent.orgId, rows, ctx.now);
   } catch (error) {

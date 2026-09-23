@@ -5,7 +5,7 @@ import { z } from "zod";
 import { authorize } from "@/lib/auth/dal";
 import { errorState, type FormState } from "@/lib/form-state";
 import { getPrisma } from "@/lib/prisma";
-import { acknowledgeIncident, addIncidentNote, reopenIncident, resolveIncident } from "@/modules/incidents/service";
+import { acknowledgeIncident, addIncidentNote, reanalyzeIncident, reopenIncident, resolveIncident } from "@/modules/incidents/service";
 
 const idSchema = z.string().min(1).max(64);
 
@@ -52,6 +52,18 @@ export async function addIncidentNoteAction(_previous: FormState, formData: Form
   if (!parsed.success) return errorState("generic");
 
   const result = await addIncidentNote(getPrisma(), auth.value.actor, parsed.data.id, parsed.data.message);
+  if (!result.ok) return errorState(result.error);
+  revalidatePath("/", "layout");
+  return { status: "success" };
+}
+
+export async function reanalyzeIncidentAction(_previous: FormState, formData: FormData): Promise<FormState> {
+  const auth = await authorize("incidents:acknowledge");
+  if (!auth.ok) return errorState(auth.error);
+  const id = idSchema.safeParse(formData.get("id"));
+  if (!id.success) return errorState("not_found");
+
+  const result = await reanalyzeIncident(getPrisma(), auth.value.actor, id.data);
   if (!result.ok) return errorState(result.error);
   revalidatePath("/", "layout");
   return { status: "success" };

@@ -1,8 +1,8 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
-import { acknowledgeIncidentAction, addIncidentNoteAction, reopenIncidentAction, resolveIncidentAction } from "@/app/actions/incidents";
+import { acknowledgeIncidentAction, addIncidentNoteAction, reanalyzeIncidentAction, reopenIncidentAction, resolveIncidentAction } from "@/app/actions/incidents";
 import { ActionForm } from "@/components/forms/action-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDuration } from "@/lib/format";
 import { AUTO_RESOLUTION_NOTE, metricTypeMessageKey, sourceKindMessageKey } from "@/modules/alerts/constants";
+import type { RcaIncidentRef } from "@/modules/aiops/rca";
 import type { IncidentRow } from "@/modules/incidents/service";
 
 const NAMESPACES = ["incidentsAdmin.errors", "auth.errors"];
@@ -71,6 +72,122 @@ function ResolveForm({ incidentId }: { incidentId: string }) {
   );
 }
 
+function RefList({ refs }: { refs: RcaIncidentRef[] }) {
+  const t = useTranslations();
+  const offset = (sec: number) =>
+    sec === 0 ? t("aiops.offsetSame") : t(sec < 0 ? "aiops.offsetBefore" : "aiops.offsetAfter", { duration: formatDuration(Math.abs(sec) * 1000) });
+  return (
+    <ul className="ml-4 list-disc text-muted-foreground">
+      {refs.map((ref) => (
+        <li key={ref.incidentId}>
+          {ref.title}
+          {ref.sourceLabel ? ` — ${ref.sourceLabel}` : ""}
+          {ref.metric ? ` · ${t(`metricType.${metricTypeMessageKey(ref.metric)}`)}` : ""} ({offset(ref.offsetSec)})
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Deterministic findings (translated here from their structured form) + the optional Claude narrative. */
+function RcaPanel({ incident, canAct }: { incident: IncidentRow; canAct: boolean }) {
+  const t = useTranslations("aiops");
+  const format = useFormatter();
+  const locale = useLocale();
+  const { rca } = incident;
+  const findings = rca.findings;
+  const narrative = locale === "fr" ? rca.summaryFr : rca.summaryEn;
+  const percent = (value: number) => format.number(value, { style: "percent", maximumFractionDigits: 0 });
+
+  return (
+    <section className="space-y-2 rounded-md border p-3 text-sm" data-testid="rca-panel">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-medium">{t("rootCause")}</h3>
+        <div className="flex items-center gap-2">
+          {incident.anomalyScore !== null ? (
+            <Badge variant="outline" data-testid="anomaly-score">{t("anomalyScore")}: {percent(incident.anomalyScore)}</Badge>
+          ) : null}
+          {rca.confidence !== null ? <Badge variant="secondary">{t("confidenceValue", { value: percent(rca.confidence) })}</Badge> : null}
+        </div>
+      </div>
+
+      {findings ? (
+        <div className="space-y-2">
+          <p data-testid="rca-verdict">{t(`verdict.${findings.verdict}`, { node: findings.node ?? incident.sourceLabel ?? "?" })}</p>
+          {findings.rootCauses.length > 0 ? (
+            <div>
+              <p className="font-medium">{t("probableOrigin")}</p>
+              {findings.rootCauses.map((root) => (
+                <div key={root.label} data-testid="rca-root">
+                  <p>{root.label}</p>
+                  <RefList refs={root.incidents} />
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {findings.impacted.length > 0 ? (
+            <div>
+              <p className="font-medium">{t("alsoFailing")}</p>
+              {findings.impacted.map((node) => (
+                <div key={node.label} data-testid="rca-impacted">
+                  <p>{node.label}</p>
+                  <RefList refs={node.incidents} />
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {findings.blastRadius.count > 0 ? (
+            <p className="text-muted-foreground">{t("blastRadius", { count: findings.blastRadius.count, labels: findings.blastRadius.labels.join(", ") })}</p>
+          ) : null}
+          {findings.sameSource.length > 0 ? (
+            <div>
+              <p className="font-medium">{t("sameSource")}</p>
+              <RefList refs={findings.sameSource} />
+            </div>
+          ) : null}
+          {findings.correlated.length > 0 ? (
+            <div>
+              <p className="font-medium">{t("correlatedNoLink")}</p>
+              <RefList refs={findings.correlated} />
+            </div>
+          ) : null}
+          {findings.firstToStart && (findings.correlated.length > 0 || findings.impacted.length > 0) ? (
+            <p className="text-muted-foreground">{t("firstToStart")}</p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">{t("deterministic")}</p>
+        </div>
+      ) : (
+        <p className="text-muted-foreground">{t("noAnalysis")}</p>
+      )}
+
+      {narrative ? (
+        <div className="space-y-1 border-t pt-2" data-testid="rca-narrative">
+          <p className="font-medium">{t("summary")}</p>
+          <p className="whitespace-pre-line">{narrative}</p>
+          <p className="text-xs text-muted-foreground">{t("aiGenerated")}</p>
+        </div>
+      ) : rca.narrativePending ? (
+        <p className="border-t pt-2 text-muted-foreground">{t("narrativePending")}</p>
+      ) : rca.narrativeFailed ? (
+        <p className="border-t pt-2 text-muted-foreground">{t("narrativeFailed")}</p>
+      ) : null}
+
+      {canAct ? (
+        <ActionForm action={reanalyzeIncidentAction} namespaces={["aiops.errors", ...NAMESPACES]}>
+          {({ pending }) => (
+            <>
+              <input type="hidden" name="id" value={incident.id} />
+              <Button type="submit" variant="outline" size="sm" disabled={pending} data-testid="rca-reanalyze">
+                {pending ? t("reanalyzing") : t("reanalyze")}
+              </Button>
+            </>
+          )}
+        </ActionForm>
+      ) : null}
+    </section>
+  );
+}
+
 export function IncidentCard({ incident, canAct, now }: { incident: IncidentRow; canAct: boolean; now: Date }) {
   const t = useTranslations();
   const ti = useTranslations("incidents");
@@ -105,6 +222,8 @@ export function IncidentCard({ incident, canAct, now }: { incident: IncidentRow;
         {incident.resolutionNote && incident.resolutionNote !== AUTO_RESOLUTION_NOTE ? (
           <p className="text-sm">{ti("resolutionNote")}: {incident.resolutionNote}</p>
         ) : null}
+
+        <RcaPanel incident={incident} canAct={canAct} />
 
         {canAct ? (
           <div className="flex flex-wrap items-center gap-2">

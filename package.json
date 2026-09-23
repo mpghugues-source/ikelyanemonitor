@@ -17,9 +17,10 @@
     "prebuild": "prisma generate",
     "create:owner": "tsx scripts/create-owner.ts",
     "test:e2e": "playwright test",
-    "checks:runner": "tsx scripts/check-runner.ts"
+    "worker": "tsx scripts/worker.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@base-ui/react": "^1.8.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",

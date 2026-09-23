@@ -2,7 +2,7 @@
 
 import { Check, Copy } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useActionState, useState, type ReactNode } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { idle, type FormState } from "@/lib/form-state";
 import { cn } from "@/lib/utils";
@@ -32,14 +32,31 @@ interface ActionFormProps<T> {
   children: ReactNode | ((context: { pending: boolean; state: FormState<T> }) => ReactNode);
 }
 
-/** A <form> bound to a Server Action, with pending state, confirmation and translated errors. */
+/**
+ * A <form> bound to a Server Action, with pending state, confirmation and translated errors.
+ *
+ * Submission goes through onSubmit + startTransition rather than letting React handle `action`: React 19
+ * resets a form after EVERY action it runs, so a validation error returned by the server used to wipe
+ * everything the user had typed. Here the form is only reset after a SUCCESS (keeping the familiar
+ * "cleared after submit" behaviour); `action` stays set for progressive enhancement.
+ */
 export function ActionForm<T = undefined>({ action, namespaces, confirm, className, children }: ActionFormProps<T>) {
   const [state, formAction, pending] = useActionState<FormState<T>, FormData>(action, idle as FormState<T>);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (state.status === "success") formRef.current?.reset();
+  }, [state]);
   return (
     <form
+      ref={formRef}
       action={formAction}
       className={className}
-      onSubmit={confirm ? (event) => { if (!window.confirm(confirm)) event.preventDefault(); } : undefined}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (confirm && !window.confirm(confirm)) return;
+        const formData = new FormData(event.currentTarget);
+        startTransition(() => formAction(formData));
+      }}
     >
       {typeof children === "function" ? children({ pending, state }) : children}
       <ErrorText state={state} namespaces={namespaces} />
