@@ -29,6 +29,8 @@ export const PERMISSIONS = [
   // Operate
   "incidents:acknowledge",
   "remediation:run",
+  /** Ask the check runner to probe an endpoint now — changes no configuration. */
+  "endpoints:check",
   // Configure
   "hosts:write",
   "hosts:rotate-secret",
@@ -64,7 +66,7 @@ const VIEWER: readonly Permission[] = [
   "members:read",
 ];
 
-const OPERATOR: readonly Permission[] = [...VIEWER, "incidents:acknowledge", "remediation:run"];
+const OPERATOR: readonly Permission[] = [...VIEWER, "incidents:acknowledge", "remediation:run", "endpoints:check"];
 
 const ADMIN: readonly Permission[] = [
   ...OPERATOR,

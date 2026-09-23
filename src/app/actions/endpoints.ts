@@ -6,7 +6,7 @@ import { HttpMethod } from "@/generated/prisma/enums";
 import { authorize } from "@/lib/auth/dal";
 import { errorState, type FormState } from "@/lib/form-state";
 import { getPrisma } from "@/lib/prisma";
-import { createEndpoint, deleteEndpoint, setEndpointEnabled, updateEndpoint, type EndpointInput } from "@/modules/saas/endpoints";
+import { createEndpoint, deleteEndpoint, requestEndpointCheck, setEndpointEnabled, updateEndpoint, type EndpointInput } from "@/modules/saas/endpoints";
 
 const idSchema = z.string().min(1).max(64);
 
@@ -89,6 +89,18 @@ export async function deleteEndpointAction(_previous: FormState, formData: FormD
   if (!id.success) return errorState("not_found");
 
   const result = await deleteEndpoint(getPrisma(), auth.value.actor, id.data);
+  if (!result.ok) return errorState(result.error);
+  revalidatePath("/", "layout");
+  return { status: "success" };
+}
+
+export async function checkEndpointNowAction(_previous: FormState, formData: FormData): Promise<FormState> {
+  const auth = await authorize("endpoints:check");
+  if (!auth.ok) return errorState(auth.error);
+  const id = idSchema.safeParse(formData.get("id"));
+  if (!id.success) return errorState("not_found");
+
+  const result = await requestEndpointCheck(getPrisma(), auth.value.actor, id.data);
   if (!result.ok) return errorState(result.error);
   revalidatePath("/", "layout");
   return { status: "success" };

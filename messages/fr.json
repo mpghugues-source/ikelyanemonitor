@@ -319,7 +319,22 @@
     "followRedirects": "Suivre les redirections",
     "verifySsl": "Vérifier le certificat TLS",
     "lastCheck": "Dernière vérification",
-    "consecutiveFailures": "Échecs consécutifs"
+    "consecutiveFailures": "Échecs consécutifs",
+    "availability24h": "Disponibilité (24 h)",
+    "availability30d": "Disponibilité (30 jours)",
+    "noData": "Aucune donnée",
+    "lastError": "Dernier échec",
+    "checkError": {
+      "invalid_url": "URL invalide",
+      "blocked_target": "Bloqué : adresse privée ou réservée",
+      "dns": "Échec de la résolution DNS",
+      "connection": "Échec de la connexion",
+      "tls": "Erreur TLS",
+      "timeout": "Délai d'attente dépassé",
+      "too_many_redirects": "Trop de redirections",
+      "status_mismatch": "Code de statut inattendu",
+      "body_mismatch": "Contenu attendu introuvable"
+    }
   },
   "topology": {
     "title": "Topologie et dépendances",
@@ -953,14 +968,16 @@
     "actions": {
       "enable": "Activer",
       "disable": "Désactiver",
-      "deleteConfirm": "Supprimer l'endpoint « {name} » ? Cette action est irréversible."
+      "deleteConfirm": "Supprimer l'endpoint « {name} » ? Cette action est irréversible.",
+      "checkNow": "Vérifier maintenant"
     },
     "errors": {
       "forbidden": "Votre rôle ne permet pas cette action.",
       "invalid_url": "Saisissez une URL http:// ou https:// valide.",
       "not_found": "Cet endpoint n'existe plus.",
       "generic": "Une erreur est survenue. Veuillez réessayer."
-    }
+    },
+    "checkRequested": "Vérification programmée — le résultat apparaîtra d'ici quelques secondes."
   },
   "access": {
     "forbidden": {

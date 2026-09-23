@@ -26,6 +26,7 @@ React Flow · Prisma 7 · PostgreSQL 17 + TimescaleDB · Zod.
 | Dashboard UIs (CRUD, forms) for servers/databases/network/SaaS/topology | ✅ done |
 | Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations (emailed), members, audit log, host registration UI, TOTP two-factor + recovery codes | ✅ done; tested against a real database, both server logic (`npm test`) and browser flows (`npm run test:e2e`) |
 | Alert evaluation, incident lifecycle, notifications (e-mail, Slack, generic webhook) | ✅ done |
+| Synthetic HTTP(S) checks — runner process (`npm run checks:runner`): status/body assertions, redirects, TLS expiry, availability 24 h / 30 days vs SLA, "check now", SSRF-guarded, alerts on `ENDPOINT_*` metrics | ✅ done |
 | `ikelyane-agent` (Go) — host metrics (CPU/memory/disks/network/temperature/uptime) + SNMP v1/v2c/v3 device polling (fetches its assignment + credentials from the server) + PostgreSQL/MySQL/MariaDB monitoring (connections, QPS, cache, deadlocks, replication, storage, engine-normalized slow queries), signed delivery, offline buffering | ✅ done; see [`agent/`](agent) |
 | AIOps (anomaly detection, RCA), auto-remediation execution | ⏳ next (schema ready) |
 | Agent: MongoDB/Redis/SQL Server · SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
@@ -55,7 +56,10 @@ npm run create:owner -- --email you@example.com --name "Your Name" --org "Acme"
 # 6. Sign in at /en or /fr, then register servers from the Servers page
 #    (or from the command line: npm run provision:host -- --org acme --hostname web-01)
 
-# 7. Build and run the agent on a server you want monitored — see agent/README.md
+# 7. Start the synthetic check runner (probes the endpoints of the SaaS page) — a separate process
+npm run checks:runner
+
+# 8. Build and run the agent on a server you want monitored — see agent/README.md
 cd agent && go build -o ikelyane-agent ./cmd/ikelyane-agent
 IKELYANE_SERVER_URL=http://localhost:3000 IKELYANE_KEY_ID=ikm_… IKELYANE_SECRET=… ./ikelyane-agent
 ```
@@ -67,6 +71,7 @@ IKELYANE_SERVER_URL=http://localhost:3000 IKELYANE_KEY_ID=ikm_… IKELYANE_SECRE
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. With `DATABASE_URL` and `IKELYANE_SECRET_KEY` set it **also** runs the integration tests against a real TimescaleDB |
 | `npm run test:e2e` | Playwright browser tests (Chromium) against a **production build**: run `npm run build` first, then set `DATABASE_URL` and `IKELYANE_SECRET_KEY` and run this — it starts its own server on port 3010 |
+| `npm run checks:runner` | Long-running synthetic check runner (same `DATABASE_URL`/`IKELYANE_SECRET_KEY` as the app). Several may run side by side: each due check is claimed by exactly one (`FOR UPDATE SKIP LOCKED`). `CHECK_RUNNER_CONCURRENCY` (default 20) |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
 | `npm run db:migrate` · `db:status` · `db:generate` | Prisma migrations / client |
 | `npm run create:owner` | Create the first organization + owner account (initial password printed once) |
@@ -106,12 +111,21 @@ agent/                         ikelyane-agent (Go) — separate module, see agen
 - **Sessions:** opaque 256-bit token in an HttpOnly, SameSite=Lax, `__Host-` prefixed cookie; only its SHA-256 is stored; sliding 12 h idle timeout, 7-day cap; revoked on password change; a disabled user or a removed member loses access on the very next request.
 - **Passwords:** scrypt (N=2^15, r=8, p=3), 12–128 characters, common/repetitive passwords refused; unknown accounts cost the same hashing work as real ones; failures are throttled per e-mail (8 / 15 min) and per address (30 / 15 min).
 - **Authorization:** one permission matrix (`src/lib/auth/permissions.ts`), checked in the proxy (optimistic, cookie only), in every page and Server Action (authoritative, database) and again inside each business function. Administrators cannot grant a role at or above their own, and an organization always keeps at least one owner (race-safe).
+- **Synthetic checks cannot reach the platform's own network (SSRF):** every address a check connects
+  to — IP literal, resolved hostname (checked at connection time, so DNS rebinding does not help) and
+  every redirect hop — must be public unicast; loopback, private, link-local (cloud metadata),
+  CGNAT, IPv4-mapped IPv6 etc. are refused (`src/modules/saas/runner/target-guard.ts`). Only a
+  single-tenant install monitoring its own LAN should set `CHECKS_ALLOW_PRIVATE_TARGETS=true`.
+  Configured request headers are never forwarded to another origin on redirect.
 - **Bounded input:** body size, array lengths, string lengths, value ranges and timestamp window are
   all enforced before anything is stored.
 
 ## Known limitations
 
-- No multi-factor authentication yet, and no e-mail delivery: an invitation link is shown once to the person who creates it, who passes it on.
+- Synthetic checks run from wherever the runner runs: `EndpointCheck.regions` and multi-step
+  `syntheticScript` scenarios are stored but not executed yet. When TLS verification fails (e.g. an
+  expired certificate), the check reports `tls` with the reason but the certificate's dates are not
+  recorded.
 - Server Actions rely on the browser's `Origin` matching the host: the reverse proxy must preserve the `Host` header (Apache: `ProxyPreserveHost On`).
 - The ingestion endpoint has no rate limiting (put it behind a reverse proxy limit).
 - `npm audit` reports 4 findings in the **Prisma CLI's** dev tooling (`mysql2`, `deepmerge-ts`); they

@@ -20,7 +20,7 @@ describe("permission matrix", () => {
       "hosts:read", "devices:read", "databases:read", "endpoints:read", "topology:read",
       "finops:read", "alerts:read", "incidents:read", "remediation:read", "members:read",
     ],
-    OPERATOR: ["incidents:acknowledge", "remediation:run"],
+    OPERATOR: ["incidents:acknowledge", "remediation:run", "endpoints:check"],
     ADMIN: [
       "hosts:write", "hosts:rotate-secret", "devices:write", "databases:write", "endpoints:write",
       "topology:write", "alerts:write", "remediation:write", "members:invite", "members:manage",

@@ -319,7 +319,22 @@
     "followRedirects": "Follow redirects",
     "verifySsl": "Verify TLS certificate",
     "lastCheck": "Last check",
-    "consecutiveFailures": "Consecutive failures"
+    "consecutiveFailures": "Consecutive failures",
+    "availability24h": "Availability (24 h)",
+    "availability30d": "Availability (30 days)",
+    "noData": "No data",
+    "lastError": "Last failure",
+    "checkError": {
+      "invalid_url": "Invalid URL",
+      "blocked_target": "Blocked: private or reserved address",
+      "dns": "DNS resolution failed",
+      "connection": "Connection failed",
+      "tls": "TLS error",
+      "timeout": "Timed out",
+      "too_many_redirects": "Too many redirects",
+      "status_mismatch": "Unexpected status code",
+      "body_mismatch": "Expected content not found"
+    }
   },
   "topology": {
     "title": "Topology & dependencies",
@@ -953,14 +968,16 @@
     "actions": {
       "enable": "Enable",
       "disable": "Disable",
-      "deleteConfirm": "Delete the endpoint \"{name}\"? This cannot be undone."
+      "deleteConfirm": "Delete the endpoint \"{name}\"? This cannot be undone.",
+      "checkNow": "Check now"
     },
     "errors": {
       "forbidden": "Your role does not allow this action.",
       "invalid_url": "Enter a valid http:// or https:// URL.",
       "not_found": "This endpoint no longer exists.",
       "generic": "Something went wrong. Please try again."
-    }
+    },
+    "checkRequested": "Check scheduled — the result will appear within a few seconds."
   },
   "access": {
     "forbidden": {

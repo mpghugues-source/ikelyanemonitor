@@ -1,9 +1,10 @@
 "use client";
 
-import { Pencil, Power, Trash2 } from "lucide-react";
+import { Pencil, Power, RefreshCw, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
-import { createEndpointAction, deleteEndpointAction, toggleEndpointAction, updateEndpointAction } from "@/app/actions/endpoints";
+import { useEffect, useState } from "react";
+import { checkEndpointNowAction, createEndpointAction, deleteEndpointAction, toggleEndpointAction, updateEndpointAction } from "@/app/actions/endpoints";
 import { ActionForm } from "@/components/forms/action-form";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -137,6 +138,44 @@ export function EditEndpointDialog({ endpoint }: { endpoint: EndpointRow }) {
         </ActionForm>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Once the runner has had time to probe (it polls every ~2 s), refresh the page to show the result. */
+function RefreshAfterCheck({ requested }: { requested: boolean }) {
+  const router = useRouter();
+  useEffect(() => {
+    if (!requested) return;
+    const timer = setTimeout(() => router.refresh(), 5000);
+    return () => clearTimeout(timer);
+  }, [requested, router]);
+  return null;
+}
+
+/** "Check now" — available to operators too (endpoints:check), unlike the configuration actions below. */
+export function CheckNowButton({ endpoint }: { endpoint: EndpointRow }) {
+  const t = useTranslations("endpointAdmin");
+  if (!endpoint.enabled) return null;
+  return (
+    <ActionForm action={checkEndpointNowAction} namespaces={NAMESPACES}>
+      {({ pending, state }) => (
+        <>
+          <input type="hidden" name="id" value={endpoint.id} />
+          <RefreshAfterCheck requested={state.status === "success"} />
+          <Button
+            type="submit"
+            size="icon-sm"
+            variant="ghost"
+            disabled={pending}
+            aria-label={t("actions.checkNow")}
+            title={state.status === "success" ? t("checkRequested") : t("actions.checkNow")}
+            data-testid="endpoint-check-now"
+          >
+            <RefreshCw className={pending ? "size-4 animate-spin" : "size-4"} aria-hidden />
+          </Button>
+        </>
+      )}
+    </ActionForm>
   );
 }
 

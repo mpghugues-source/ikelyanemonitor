@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import { HealthStatus, HttpMethod } from "@/generated/prisma/enums";
+import { HealthStatus, HttpMethod, MetricType } from "@/generated/prisma/enums";
 import { recordAudit } from "@/lib/auth/audit";
 import type { Actor, Db } from "@/lib/auth/db";
 import { can } from "@/lib/auth/permissions";
@@ -27,6 +27,8 @@ export interface EndpointRow {
   lastStatusCode: number | null;
   lastResponseMs: number | null;
   consecutiveFailures: number;
+  lastError: string | null;
+  lastErrorDetail: string | null;
   createdAt: Date;
 }
 
@@ -34,7 +36,7 @@ const SELECT = {
   id: true, name: true, url: true, method: true, expectedStatus: true, expectedBodyContains: true,
   intervalSec: true, timeoutMs: true, regions: true, tags: true, enabled: true, followRedirects: true,
   verifySsl: true, slaTargetPercent: true, sslExpiresAt: true, sslIssuer: true, status: true,
-  lastCheckedAt: true, lastStatusCode: true, lastResponseMs: true, consecutiveFailures: true, createdAt: true,
+  lastCheckedAt: true, lastStatusCode: true, lastResponseMs: true, consecutiveFailures: true, lastError: true, lastErrorDetail: true, createdAt: true,
 } as const;
 
 export async function listEndpoints(db: Db, actor: Actor): Promise<Result<EndpointRow[], "forbidden">> {
@@ -127,6 +129,8 @@ export async function updateEndpoint(db: PrismaClient, actor: Actor, id: string,
         followRedirects: input.followRedirects,
         verifySsl: input.verifySsl,
         slaTargetPercent: input.slaTargetPercent,
+        // Run the edited check right away rather than after the old interval.
+        nextRunAt: null,
       },
     });
     if (result.count !== 1) return fail("not_found");
@@ -147,7 +151,7 @@ export async function updateEndpoint(db: PrismaClient, actor: Actor, id: string,
 export async function setEndpointEnabled(db: PrismaClient, actor: Actor, id: string, enabled: boolean): Promise<Result<true, EndpointWriteError>> {
   if (!can(actor.role, "endpoints:write")) return fail("forbidden");
   return db.$transaction(async (tx) => {
-    const result = await tx.endpointCheck.updateMany({ where: { id, orgId: actor.orgId }, data: { enabled } });
+    const result = await tx.endpointCheck.updateMany({ where: { id, orgId: actor.orgId }, data: enabled ? { enabled, nextRunAt: null } : { enabled } });
     if (result.count !== 1) return fail("not_found");
     await recordAudit(tx, {
       action: enabled ? "endpoint.enabled" : "endpoint.disabled",
@@ -178,6 +182,31 @@ export async function deleteEndpoint(db: PrismaClient, actor: Actor, id: string)
     });
     return ok(true as const);
   });
+}
+
+/**
+ * Ask the check runner to probe this endpoint on its next tick (a couple of seconds). Not audited:
+ * it changes no configuration. Disabled endpoints are left alone.
+ */
+export async function requestEndpointCheck(db: Db, actor: Actor, id: string): Promise<Result<true, EndpointWriteError>> {
+  if (!can(actor.role, "endpoints:check")) return fail("forbidden");
+  const result = await db.endpointCheck.updateMany({ where: { id, orgId: actor.orgId, enabled: true }, data: { nextRunAt: null } });
+  return result.count === 1 ? ok(true as const) : fail("not_found");
+}
+
+/**
+ * Availability (percent of passed checks) per endpoint since `since`, from the ENDPOINT_AVAILABLE
+ * series the runner writes (1 = passed, 0 = failed, so the average IS the ratio). Endpoints with no
+ * check in the window are absent from the map — "no data", not 0 %.
+ */
+export async function endpointAvailability(db: Db, actor: Actor, endpointIds: readonly string[], since: Date): Promise<Map<string, number>> {
+  if (!can(actor.role, "endpoints:read") || endpointIds.length === 0) return new Map();
+  const groups = await db.metricEntry.groupBy({
+    by: ["sourceId"],
+    where: { orgId: actor.orgId, metric: MetricType.ENDPOINT_AVAILABLE, sourceId: { in: [...endpointIds] }, time: { gte: since } },
+    _avg: { value: true },
+  });
+  return new Map(groups.filter((g) => g._avg.value !== null).map((g) => [g.sourceId, (g._avg.value as number) * 100]));
 }
 
 export const HTTP_METHODS: readonly HttpMethod[] = [
