@@ -1,8 +1,9 @@
 # Telemetry protocol (v1)
 
 How `ikelyane-agent` sends metrics to IkelyaneMonitor. This is the contract implemented by the Go
-agent in [`agent/`](../agent) (host metrics and SNMP network devices) and the reference for anyone
-writing a custom collector — for databases, still only a contract until someone implements it.
+agent in [`agent/`](../agent) (host metrics, SNMP network devices, PostgreSQL/MySQL/MariaDB) and the
+reference for anyone writing a custom collector (e.g. for MongoDB, Redis or SQL Server, which the agent
+does not cover yet).
 
 - Endpoint: `POST /api/v1/telemetry`
 - Body: JSON, at most `TELEMETRY_MAX_BODY_BYTES` (1 MiB by default)

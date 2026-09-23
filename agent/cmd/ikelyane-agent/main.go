@@ -17,6 +17,7 @@ import (
 	"ikelyane-agent/internal/buffer"
 	"ikelyane-agent/internal/collect"
 	"ikelyane-agent/internal/config"
+	"ikelyane-agent/internal/dbmetrics"
 	"ikelyane-agent/internal/pollerconfig"
 	"ikelyane-agent/internal/snmp"
 	"ikelyane-agent/internal/telemetry"
@@ -93,6 +94,68 @@ func (s *snmpState) pollAll(now time.Time) []telemetry.SnmpDevice {
 	return results
 }
 
+// dbPollConcurrency mirrors snmpPollConcurrency: bounds how many databases are polled at once so
+// one slow/unreachable instance cannot delay the whole cycle.
+const dbPollConcurrency = 5
+
+// dbState owns one dbmetrics.Monitor per configured database instance for the agent's lifetime —
+// each keeps its own connection pool and counter-delta state (QPS, deadlocks/min, slow-query
+// deltas) across polls, so these must not be recreated every cycle.
+type dbState struct {
+	monitors []*dbmetrics.Monitor
+}
+
+// newDBState opens one Monitor per configured database. A single bad entry (unreachable at
+// startup, unparseable DSN) is logged and skipped rather than stopping the whole agent — host
+// metrics and every other configured database must keep working regardless.
+func newDBState(cfg *config.Config) *dbState {
+	s := &dbState{}
+	for _, target := range cfg.Databases {
+		mon, err := dbmetrics.New(target)
+		if err != nil {
+			log.Printf("database %q: %v — this instance will not be monitored", target.Name, err)
+			continue
+		}
+		s.monitors = append(s.monitors, mon)
+	}
+	if len(s.monitors) > 0 {
+		log.Printf("monitoring %d database instance(s)", len(s.monitors))
+	}
+	return s
+}
+
+func (s *dbState) pollAll(ctx context.Context, now time.Time) []telemetry.DatabaseMetric {
+	if len(s.monitors) == 0 {
+		return nil
+	}
+	results := make([]telemetry.DatabaseMetric, len(s.monitors))
+	sem := make(chan struct{}, dbPollConcurrency)
+	var wg sync.WaitGroup
+	for i, mon := range s.monitors {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, mon *dbmetrics.Monitor) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			result := mon.Collect(ctx, now)
+			if !result.Reachable {
+				log.Printf("database %s: unreachable", result.Instance.Name)
+			}
+			results[i] = result
+		}(i, mon)
+	}
+	wg.Wait()
+	return results
+}
+
+func (s *dbState) closeAll() {
+	for _, mon := range s.monitors {
+		if err := mon.Close(); err != nil {
+			log.Printf("database %s: error closing connection: %v", mon.Target().Name, err)
+		}
+	}
+}
+
 func main() {
 	configPath := flag.String("config", "", "path to a JSON config file (default: read IKELYANE_* environment variables)")
 	once := flag.Bool("once", false, "collect and send a single sample, then exit (useful for testing)")
@@ -117,11 +180,13 @@ func main() {
 	client := telemetry.NewClient(cfg.ServerURL, cfg.KeyID, cfg.Secret)
 	collector := collect.New(Version)
 	snmpSt := newSNMPState(cfg)
+	dbSt := newDBState(cfg)
+	defer dbSt.closeAll()
 
 	log.Printf("ikelyane-agent %s starting: server=%s interval=%s buffer=%s", Version, cfg.ServerURL, cfg.Interval, cfg.BufferDir)
 
 	if *once {
-		runCycle(collector, client, buf, snmpSt)
+		runCycle(collector, client, buf, snmpSt, dbSt)
 		return
 	}
 
@@ -131,21 +196,21 @@ func main() {
 	ticker := time.NewTicker(cfg.Interval)
 	defer ticker.Stop()
 
-	runCycle(collector, client, buf, snmpSt) // first sample immediately, don't wait a full interval
+	runCycle(collector, client, buf, snmpSt, dbSt) // first sample immediately, don't wait a full interval
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("shutting down")
 			return
 		case <-ticker.C:
-			runCycle(collector, client, buf, snmpSt)
+			runCycle(collector, client, buf, snmpSt, dbSt)
 		}
 	}
 }
 
 // runCycle flushes whatever is buffered, then collects and sends a fresh sample. A single cycle's
 // failures never crash the agent: everything here is logged and retried on the next tick.
-func runCycle(collector *collect.Collector, client *telemetry.Client, buf *buffer.Buffer, snmpSt *snmpState) {
+func runCycle(collector *collect.Collector, client *telemetry.Client, buf *buffer.Buffer, snmpSt *snmpState, dbSt *dbState) {
 	flushBuffer(client, buf)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -159,6 +224,7 @@ func runCycle(collector *collect.Collector, client *telemetry.Client, buf *buffe
 	now := time.Now()
 	snmpSt.refresh(now)
 	snmpDevices := snmpSt.pollAll(now)
+	databases := dbSt.pollAll(ctx, now)
 
 	payload := telemetry.Payload{
 		SchemaVersion: telemetry.SchemaVersion,
@@ -166,6 +232,7 @@ func runCycle(collector *collect.Collector, client *telemetry.Client, buf *buffe
 		Agent:         telemetry.AgentInfo{Version: Version},
 		System:        sys,
 		SNMPDevices:   snmpDevices,
+		Databases:     databases,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

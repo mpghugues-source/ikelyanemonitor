@@ -7,14 +7,16 @@ package telemetry
 const SchemaVersion = 1
 
 // Payload is the request body. At least one of System, SNMPDevices or Databases must be set;
-// this agent always sets System, and SNMPDevices whenever the poller-config fetch (see
-// internal/pollerconfig) returned at least one assigned device.
+// this agent always sets System, SNMPDevices whenever the poller-config fetch (see
+// internal/pollerconfig) returned at least one assigned device, and Databases whenever the agent
+// is configured to monitor at least one (internal/dbmetrics).
 type Payload struct {
-	SchemaVersion int          `json:"schemaVersion"`
-	SentAt        string       `json:"sentAt"` // RFC3339, when this request was built
-	Agent         AgentInfo    `json:"agent"`
-	System        *System      `json:"system,omitempty"`
-	SNMPDevices   []SnmpDevice `json:"snmpDevices,omitempty"`
+	SchemaVersion int              `json:"schemaVersion"`
+	SentAt        string           `json:"sentAt"` // RFC3339, when this request was built
+	Agent         AgentInfo        `json:"agent"`
+	System        *System          `json:"system,omitempty"`
+	SNMPDevices   []SnmpDevice     `json:"snmpDevices,omitempty"`
+	Databases     []DatabaseMetric `json:"databases,omitempty"`
 }
 
 type AgentInfo struct {
@@ -140,4 +142,61 @@ type SnmpDevice struct {
 	CollectedAt string          `json:"collectedAt"`
 	Device      SnmpDeviceInfo  `json:"device"`
 	Interfaces  []SnmpInterface `json:"interfaces"`
+}
+
+// ── Databases ─────────────────────────────────────────────────────────────────────────────────
+// Mirrors src/lib/telemetry/schemas.ts DatabaseMetricSchema/SlowQuerySchema exactly. Credentials
+// are configured locally on the agent (internal/config) and never appear here — see Endpoint's
+// doc comment for what that means for its value specifically.
+
+type DatabaseInstanceInfo struct {
+	// Stable identifier CHOSEN BY THE OPERATOR in the agent's own config (internal/config), unique
+	// per host+engine — e.g. "main:5432". Must never change across restarts: the server keys its
+	// upsert on it, so a changed name creates a second instance rather than updating the first.
+	Name string `json:"name"`
+	// postgresql | mysql | mariadb (this agent's engines so far; mongodb | redis | mssql also on
+	// the wire per docs/telemetry.md, not implemented here).
+	Engine               string  `json:"engine"`
+	Version              string  `json:"version,omitempty"`
+	Endpoint             string  `json:"endpoint,omitempty"` // "host:port" — NEVER credentials, see internal/dbmetrics/dsn.go
+	IsReplica            *bool   `json:"isReplica,omitempty"`
+	StorageQuotaBytes    *uint64 `json:"storageQuotaBytes,omitempty"`
+	MaxConnections       *int    `json:"maxConnections,omitempty"`
+	SlowQueryThresholdMs *int    `json:"slowQueryThresholdMs,omitempty"`
+}
+
+type DatabaseMetrics struct {
+	QPS                    *float64 `json:"qps,omitempty"`
+	ActiveConnections      *int     `json:"activeConnections,omitempty"`
+	ConnectionUsagePercent *float64 `json:"connectionUsagePercent,omitempty"`
+	CacheHitRatio          *float64 `json:"cacheHitRatio,omitempty"` // 0..1
+	SlowQueriesPerMin      *float64 `json:"slowQueriesPerMin,omitempty"`
+	DeadlocksPerMin        *float64 `json:"deadlocksPerMin,omitempty"`
+	DeadlocksTotal         *uint64  `json:"deadlocksTotal,omitempty"`
+	ReplicationLagSeconds  *float64 `json:"replicationLagSeconds,omitempty"`
+	StorageUsedBytes       *uint64  `json:"storageUsedBytes,omitempty"`
+}
+
+// SlowQuery reports a NORMALIZED statement (literals already replaced by placeholders BY THE
+// DATABASE ENGINE ITSELF — Postgres's pg_stat_statements and MySQL/MariaDB's performance_schema
+// digest both aggregate by normalized shape, so what they hand back is already safe to send) that
+// executed at least once more since the previous poll. DurationMs is that statement shape's AVERAGE
+// duration over the interval (these engines expose aggregates, not a per-execution log), and Calls
+// is how many additional executions were observed — not a single literal event.
+type SlowQuery struct {
+	CapturedAt   string  `json:"capturedAt"`
+	Fingerprint  string  `json:"fingerprint"`
+	QueryText    string  `json:"queryText,omitempty"`
+	DurationMs   float64 `json:"durationMs"`
+	Calls        *int    `json:"calls,omitempty"`
+	RowsExamined *uint64 `json:"rowsExamined,omitempty"`
+	RowsReturned *uint64 `json:"rowsReturned,omitempty"`
+}
+
+type DatabaseMetric struct {
+	CollectedAt string               `json:"collectedAt"`
+	Instance    DatabaseInstanceInfo `json:"instance"`
+	Reachable   bool                 `json:"reachable"`
+	Metrics     DatabaseMetrics      `json:"metrics"`
+	SlowQueries []SlowQuery          `json:"slowQueries,omitempty"`
 }

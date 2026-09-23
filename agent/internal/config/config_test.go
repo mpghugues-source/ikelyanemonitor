@@ -9,10 +9,17 @@ import (
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{envServerURL, envKeyID, envSecret, envInterval, envBufferDir} {
+	for _, name := range []string{envServerURL, envKeyID, envSecret, envInterval, envBufferDir, envDatabasesJSON} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
+}
+
+func validBaseEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(envServerURL, "https://monitor.example.com")
+	t.Setenv(envKeyID, "ikm_abc")
+	t.Setenv(envSecret, "s3cret")
 }
 
 func TestLoad_FromEnvironment(t *testing.T) {
@@ -138,5 +145,84 @@ func TestLoad_FileNotJSON(t *testing.T) {
 	}
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected an error for a config file that is not valid JSON")
+	}
+}
+
+func TestLoad_Databases_FromEnvironment(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	t.Setenv(envDatabasesJSON, `[{"name":"main:5432","engine":"postgresql","dsn":"postgres://u:p@localhost:5432/main"}]`)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Databases) != 1 {
+		t.Fatalf("got %d databases, want 1", len(cfg.Databases))
+	}
+	db := cfg.Databases[0]
+	if db.Name != "main:5432" || db.Engine != "postgresql" || db.DSN != "postgres://u:p@localhost:5432/main" {
+		t.Errorf("got %+v", db)
+	}
+	if db.SlowQueryThresholdMs != 1000 {
+		t.Errorf("SlowQueryThresholdMs = %d, want the 1000ms default applied when unset", db.SlowQueryThresholdMs)
+	}
+}
+
+func TestLoad_Databases_FromFile_ExplicitThresholdKept(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	body := `{
+		"serverUrl": "https://monitor.example.com", "keyId": "ikm_x", "secret": "s",
+		"databases": [{"name": "reporting:3306", "engine": "mysql", "dsn": "u:p@tcp(localhost:3306)/reporting", "slowQueryThresholdMs": 500}]
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Databases) != 1 || cfg.Databases[0].SlowQueryThresholdMs != 500 {
+		t.Fatalf("got %+v, want the explicit 500ms threshold preserved", cfg.Databases)
+	}
+}
+
+func TestLoad_Databases_InvalidJSON(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	t.Setenv(envDatabasesJSON, `not json`)
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected an error for invalid JSON in IKELYANE_DATABASES_JSON")
+	}
+}
+
+func TestLoad_Databases_MissingFieldsRejected(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	t.Setenv(envDatabasesJSON, `[{"name":"main","engine":"postgresql"}]`) // no dsn
+	if _, err := Load(""); err == nil {
+		t.Fatal("a database entry without a dsn must be rejected")
+	}
+}
+
+func TestLoad_Databases_UnsupportedEngineRejected(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	t.Setenv(envDatabasesJSON, `[{"name":"main","engine":"mongodb","dsn":"mongodb://localhost"}]`)
+	if _, err := Load(""); err == nil {
+		t.Fatal("mongodb is not implemented by this agent yet and must be rejected, not silently ignored")
+	}
+}
+
+func TestLoad_Databases_DuplicateNameRejected(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	t.Setenv(envDatabasesJSON, `[
+		{"name":"main","engine":"postgresql","dsn":"postgres://a"},
+		{"name":"main","engine":"mysql","dsn":"b"}
+	]`)
+	if _, err := Load(""); err == nil {
+		t.Fatal("two databases with the same name must be rejected: the server upserts on that name")
 	}
 }

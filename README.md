@@ -26,9 +26,9 @@ React Flow · Prisma 7 · PostgreSQL 17 + TimescaleDB · Zod.
 | Dashboard UIs (CRUD, forms) for servers/databases/network/SaaS/topology | ✅ done |
 | Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations (emailed), members, audit log, host registration UI, TOTP two-factor + recovery codes | ✅ done; tested against a real database, both server logic (`npm test`) and browser flows (`npm run test:e2e`) |
 | Alert evaluation, incident lifecycle, notifications (e-mail, Slack, generic webhook) | ✅ done |
-| `ikelyane-agent` (Go) — host metrics (CPU/memory/disks/network/temperature/uptime) + SNMP v1/v2c/v3 device polling (fetches its assignment + credentials from the server), signed delivery, offline buffering | ✅ done; see [`agent/`](agent) |
+| `ikelyane-agent` (Go) — host metrics (CPU/memory/disks/network/temperature/uptime) + SNMP v1/v2c/v3 device polling (fetches its assignment + credentials from the server) + PostgreSQL/MySQL/MariaDB monitoring (connections, QPS, cache, deadlocks, replication, storage, engine-normalized slow queries), signed delivery, offline buffering | ✅ done; see [`agent/`](agent) |
 | AIOps (anomaly detection, RCA), auto-remediation execution | ⏳ next (schema ready) |
-| Agent: database monitoring · SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
+| Agent: MongoDB/Redis/SQL Server · SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
 
 ## Quick start
 

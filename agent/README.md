@@ -1,11 +1,10 @@
 # ikelyane-agent
 
 The IkelyaneMonitor agent: collects host metrics (CPU, memory, disks, network, temperature,
-uptime, process count) and polls SNMP network devices assigned to it in the web UI (routers,
-switches, firewalls, APs, UPSes, BMCs — v1/v2c/v3), reporting both over the signed HTTP protocol
-described in [`docs/telemetry.md`](../docs/telemetry.md).
-
-Database monitoring (also part of the wire protocol) is not implemented yet.
+uptime, process count), polls SNMP network devices assigned to it in the web UI (routers,
+switches, firewalls, APs, UPSes, BMCs — v1/v2c/v3) and monitors PostgreSQL / MySQL / MariaDB
+instances configured locally, reporting everything over the signed HTTP protocol described in
+[`docs/telemetry.md`](../docs/telemetry.md).
 
 ## SNMP
 
@@ -27,9 +26,60 @@ are not collected; neither is packet loss (would need ICMP, which this agent doe
 device that fails to respond is still reported, with `reachable: false` — the server then marks it
 DOWN rather than leaving it stale.
 
+## Databases
+
+Unlike SNMP devices, databases are configured **only in the agent's own config** (`databases`, see
+[Configure](#configure)) — database credentials never leave the host. The server auto-discovers each
+instance from the first sample that mentions it, keyed on its `name` (keep it stable: renaming creates
+a second instance). Supported engines: `postgresql`, `mysql`, `mariadb`.
+
+Every cycle, for each instance (up to 5 polled at once, one small connection pool per instance kept
+for the agent's lifetime):
+
+| Metric | PostgreSQL | MySQL / MariaDB |
+|---|---|---|
+| version, max connections | `server_version`, `max_connections` | `VERSION()`, `@@max_connections` |
+| active connections / usage % | client backends in `pg_stat_activity` | `Threads_connected` |
+| QPS | Δ(`xact_commit`+`xact_rollback`) — transactions/s | Δ`Questions`/s |
+| cache hit ratio | `blks_hit` / (`blks_hit`+`blks_read`) | InnoDB buffer pool read requests vs disk reads |
+| deadlocks (total, /min) | `pg_stat_database.deadlocks` | `Innodb_deadlocks` (MariaDB only — absent on MySQL 8, so not reported there) |
+| replication | `pg_is_in_recovery()`, replay lag | `SHOW REPLICA STATUS` / `SHOW SLAVE STATUS` |
+| storage used | `pg_database_size` of every database | `information_schema.tables` (data + index) |
+| slow queries | `pg_stat_statements` (PostgreSQL 13+) | `performance_schema` statement digests |
+
+Rates (QPS, deadlocks/min, slow queries/min) appear from the second sample onwards. An unreachable
+instance is still reported, with `reachable: false`, and the server marks it DOWN.
+
+**Slow queries** are statement *shapes* already normalized by the engine itself (`SELECT … WHERE id =
+$1` / `?`) — the agent never sees or sends literal values. A shape is reported when it ran again since
+the previous cycle and its average duration **over that interval** is at or above
+`slowQueryThresholdMs` (default 1000); `calls` is the number of executions in the interval. Without
+`pg_stat_statements` (`shared_preload_libraries = 'pg_stat_statements'` + `CREATE EXTENSION
+pg_stat_statements`) or `performance_schema = ON`, everything else is still collected — just no slow
+queries.
+
+### Monitoring user
+
+Give the agent a dedicated, read-only monitoring account — never an application or admin account:
+
+```sql
+-- PostgreSQL 10+
+CREATE ROLE ikelyane_agent LOGIN PASSWORD '…';
+GRANT pg_monitor TO ikelyane_agent;          -- stats views, pg_stat_statements for every user
+
+-- MySQL 8 / MariaDB 10.5+
+CREATE USER 'ikelyane_agent'@'localhost' IDENTIFIED BY '…';
+GRANT PROCESS, REPLICATION CLIENT ON *.* TO 'ikelyane_agent'@'localhost';  -- MariaDB 10.5+: REPLICA MONITOR
+GRANT SELECT ON performance_schema.* TO 'ikelyane_agent'@'localhost';
+```
+
+On MySQL/MariaDB, `information_schema.tables` only lists tables the account has some privilege on:
+with the grants above, **storage used is not reported**. Add `GRANT SELECT ON <schema>.* …` for the
+schemas whose size you want counted (this also lets the account read their data — your call).
+
 ## Build
 
-Requires Go 1.24+.
+Requires Go 1.25+.
 
 ```bash
 cd agent
@@ -71,9 +121,18 @@ Two ways, in order of precedence:
      "keyId": "ikm_xxxxxxxxxxxxxxxxxxxxxxxx",
      "secret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
      "intervalSeconds": 60,
-     "bufferDir": "/var/lib/ikelyane-agent/buffer"
+     "bufferDir": "/var/lib/ikelyane-agent/buffer",
+     "databases": [
+       { "name": "main:5432", "engine": "postgresql",
+         "dsn": "postgres://ikelyane_agent:…@127.0.0.1:5432/postgres?sslmode=disable" },
+       { "name": "shop:3306", "engine": "mariadb",
+         "dsn": "ikelyane_agent:…@tcp(127.0.0.1:3306)/", "slowQueryThresholdMs": 500 }
+     ]
    }
    ```
+
+   `dsn` is the driver's native format (pgx URL or keyword string; go-sql-driver `user:pass@tcp(host:port)/`
+   or `unix(/path/to.sock)`). It is never logged or sent: only a credential-free `host:port` is.
 
 2. **Environment variables** (used when `--config` is not given — the natural fit for a systemd
    `EnvironmentFile`, the pattern already used for this app's other services):
@@ -85,10 +144,11 @@ Two ways, in order of precedence:
    | `IKELYANE_SECRET` | yes | — |
    | `IKELYANE_INTERVAL_SECONDS` | no | `60` (minimum `10`) |
    | `IKELYANE_BUFFER_DIR` | no | `/var/lib/ikelyane-agent/buffer` |
+   | `IKELYANE_DATABASES_JSON` | no | — (the `databases` array above, as JSON) |
 
    See [`ikelyane-agent.example.env`](ikelyane-agent.example.env).
 
-The secret is a credential: keep its file/environment source `0600`, readable only by the agent's
+The secret and any database DSN are credentials: keep their file/environment source `0600`, readable only by the agent's
 user (and root).
 
 ## Run
@@ -144,10 +204,11 @@ unaffected either way.
 ## Layout
 
 ```
-cmd/ikelyane-agent/    entry point: flags, the collect/send loop, SNMP device polling loop
+cmd/ikelyane-agent/    entry point: flags, the collect/send loop, SNMP and database polling loops
 internal/config/       loads IKELYANE_* env vars or a JSON file
 internal/collect/      gopsutil-based host metrics, with per-cycle rate calculation for IOPS/bandwidth
 internal/snmp/         SNMP v1/v2c/v3 polling (github.com/gosnmp/gosnmp) — MIB-II/IF-MIB, counter-delta rates
+internal/dbmetrics/    PostgreSQL (pgx) / MySQL-MariaDB (go-sql-driver) monitoring, slow-query interval deltas
 internal/pollerconfig/ fetches the assigned SNMP device list (+ decrypted credentials) from the server
 internal/telemetry/    wire types (mirrors src/lib/telemetry/schemas.ts), HMAC signing, HTTP client
 internal/buffer/       disk-backed retry queue for when the server is unreachable
@@ -165,4 +226,6 @@ go test -race ./...          # internal/snmp shares Poller state across goroutin
 not just self-consistency. `internal/collect`'s tests include a smoke test that runs the real
 collector against whatever machine executes `go test`. `internal/snmp`'s real-agent tests
 (`SNMP_TEST_TARGET=…`, see that file's doc comment to stand up a local `snmpd`) poll an actual SNMP
-v2c/v3 responder rather than mocking every PDU.
+v2c/v3 responder rather than mocking every PDU. `internal/dbmetrics`'s unit tests pin the slow-query
+interval arithmetic (interval average vs lifetime, stats reset, eviction) and the server's size limits;
+the collectors themselves were verified against real PostgreSQL 16 and MariaDB 11 instances.
