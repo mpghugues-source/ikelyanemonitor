@@ -21,6 +21,8 @@ browser / agents ──HTTPS──► Cloudflare (proxied DNS) ──HTTPS──
 | Database container | `deploy/docker-compose.prod.yml`, compose project `ikelyanemonitor-prod`, volume `ikelyanemonitor-prod_pgdata` |
 | Backups | `/var/backups/ikelyanemonitor/*.dump`, nightly 02:40 (`ikelyanemonitor-backup.timer`), 14 days |
 | Apache | `/etc/apache2/conf.d/userdata/{ssl,std}/2_4/ikelyane/monitor.ikelyane.com/*.conf` (copies of `deploy/apache/`) |
+| TLS certificate | Let's Encrypt via certbot, DNS validation through the Cloudflare API (`/etc/letsencrypt/cloudflare/ikelyane.ini`); renewed by `certbot-renew.timer`, installed into the cPanel vhost by `/etc/letsencrypt/renewal-hooks/deploy/ikelyanemonitor-cpanel.sh` (copy of `deploy/certbot-deploy-hook.sh`). AutoSSL's HTTP validation fails behind Cloudflare's proxy. |
+| DNS | Cloudflare, `A monitor → 144.91.103.251`, proxied |
 | Logs | `journalctl -u ikelyanemonitor-web`, `-u ikelyanemonitor-worker`, `-u ikelyanemonitor-backup` |
 
 The development database (`docker-compose.yml`, port 5440) and the working copy in `/root/ikelyanemonitor` are
@@ -63,13 +65,16 @@ re-registered). It is not in the backups on purpose.
 ```bash
 systemctl stop ikelyanemonitor-web ikelyanemonitor-worker
 docker exec -i ikelyanemonitor-prod-db psql -U ikelyane -d postgres -c 'DROP DATABASE ikelyanemonitor' -c 'CREATE DATABASE ikelyanemonitor'
-docker exec -i ikelyanemonitor-prod-db psql -U ikelyane -d ikelyanemonitor -c 'CREATE EXTENSION timescaledb' -c 'SELECT timescaledb_pre_restore()'
+docker exec -i ikelyanemonitor-prod-db psql -U ikelyane -d ikelyanemonitor -c 'CREATE EXTENSION IF NOT EXISTS timescaledb' -c 'SELECT timescaledb_pre_restore()'
 docker exec -i ikelyanemonitor-prod-db pg_restore -U ikelyane -d ikelyanemonitor --no-owner < /var/backups/ikelyanemonitor/<file>.dump
 docker exec -i ikelyanemonitor-prod-db psql -U ikelyane -d ikelyanemonitor -c 'SELECT timescaledb_post_restore()'
 systemctl start ikelyanemonitor-web ikelyanemonitor-worker
 ```
 
 ## Server specifics
+
+- `deploy.sh` installs the systemd units but NOT the Apache files: after changing `deploy/apache/*`, copy them to
+  the paths above, then `/scripts/rebuildhttpdconf && apachectl -t && /scripts/restartsrv_httpd --graceful`.
 
 - **Client IP**: Apache trusts `CF-Connecting-IP` only from Cloudflare's ranges (`ssl-proxy.conf`); if Cloudflare
   publishes new ranges (https://www.cloudflare.com/ips/), update that file. Sign-in throttling depends on it.
