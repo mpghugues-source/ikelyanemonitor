@@ -58,7 +58,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   },
   "description": "IkelyaneMonitor — unified monitoring: servers, databases, SNMP network, web endpoints, AIOps, FinOps/GreenOps",
   "license": "UNLICENSED",
