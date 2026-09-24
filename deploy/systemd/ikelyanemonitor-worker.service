@@ -1,0 +1,34 @@
+# IkelyaneMonitor background worker (scripts/worker.ts): synthetic checks, remediation housekeeping,
+# optional Claude RCA summaries. Installed by deploy/deploy.sh into /etc/systemd/system/.
+[Unit]
+Description=IkelyaneMonitor background worker
+Documentation=file:///opt/ikelyanemonitor/current/deploy/README.md
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=ikelyanemonitor
+Group=ikelyanemonitor
+WorkingDirectory=/opt/ikelyanemonitor/current
+EnvironmentFile=/etc/ikelyanemonitor/app.env
+Environment=NODE_ENV=production
+Environment=PATH=/opt/node-24/bin:/usr/bin:/bin
+ExecStart=/opt/node-24/bin/node node_modules/tsx/dist/cli.mjs scripts/worker.ts
+Restart=always
+RestartSec=10
+# The worker stops its loops on SIGTERM and lets in-flight checks finish.
+TimeoutStopSec=30
+
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

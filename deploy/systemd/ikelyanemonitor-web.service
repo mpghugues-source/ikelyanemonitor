@@ -1,0 +1,37 @@
+# IkelyaneMonitor web app (Next.js production server), behind Apache on monitor.ikelyane.com.
+# Installed by deploy/deploy.sh into /etc/systemd/system/.
+[Unit]
+Description=IkelyaneMonitor web app
+Documentation=file:///opt/ikelyanemonitor/current/deploy/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+# Wants=, not Requires=: a Docker restart (nightly package updates) must not stop this unit for good.
+Wants=docker.service
+
+[Service]
+Type=simple
+User=ikelyanemonitor
+Group=ikelyanemonitor
+WorkingDirectory=/opt/ikelyanemonitor/current
+EnvironmentFile=/etc/ikelyanemonitor/app.env
+Environment=NODE_ENV=production
+Environment=PATH=/opt/node-24/bin:/usr/bin:/bin
+# Only Apache reaches it: loopback address, port closed in firewalld anyway.
+ExecStart=/opt/node-24/bin/node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3020
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+# Hardening. No NoNewPrivileges: e-mail goes through /usr/sbin/sendmail, which is setgid on cPanel.
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

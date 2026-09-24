@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly IkelyaneMonitor database backup
+
+[Timer]
+# 02:40 local: after the ANSER backup (02:00), before cPanel's upcp (03:28) restarts services.
+OnCalendar=*-*-* 02:40:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

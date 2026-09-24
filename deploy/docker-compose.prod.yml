@@ -1,0 +1,33 @@
+# PRODUCTION database — separate container, volume and port from the development one (docker-compose.yml
+# at the repository root), so `docker compose down -v` in development can never touch production data.
+#
+#   docker compose -p ikelyanemonitor-prod --env-file /etc/ikelyanemonitor/db.env \
+#     -f deploy/docker-compose.prod.yml up -d
+#
+# The image is pinned: a TimescaleDB upgrade is a deliberate step (ALTER EXTENSION timescaledb UPDATE).
+# Bound to 127.0.0.1 only — Docker publishes ports around firewalld.
+services:
+  db:
+    image: timescale/timescaledb:2.30.1-pg17
+    container_name: ikelyanemonitor-prod-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ikelyane
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in /etc/ikelyanemonitor/db.env}
+      POSTGRES_DB: ikelyanemonitor
+      # Telemetry is write-heavy: TimescaleDB's own tuning at first start (see the image docs).
+      TS_TUNE_MEMORY: 2GB
+      TS_TUNE_NUM_CPUS: "2"
+    ports:
+      - "127.0.0.1:5441:5432"
+    shm_size: 256mb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ikelyane -d ikelyanemonitor"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:

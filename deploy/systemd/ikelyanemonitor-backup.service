@@ -1,0 +1,8 @@
+[Unit]
+Description=IkelyaneMonitor database backup
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ikelyanemonitor/current/deploy/backup.sh
