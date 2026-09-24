@@ -61,5 +61,9 @@
     "vitest": "^4.1.11"
   },
   "description": "IkelyaneMonitor — unified monitoring: servers, databases, SNMP network, web endpoints, AIOps, FinOps/GreenOps",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "overrides": {
+    "mysql2": "^3.22.0",
+    "deepmerge-ts": "^8.0.2"
+  }
 }
