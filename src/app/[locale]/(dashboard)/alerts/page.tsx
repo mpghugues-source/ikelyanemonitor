@@ -13,6 +13,7 @@ import { metricTypeMessageKey, sourceKindMessageKey } from "@/modules/alerts/con
 import { listDatabases } from "@/modules/databases/instances";
 import { listDevices } from "@/modules/network/devices";
 import { listEndpoints } from "@/modules/saas/endpoints";
+import { listRemediationActions } from "@/modules/remediation/actions";
 import { listHosts } from "@/modules/servers/hosts";
 
 export default async function AlertsPage({ params }: PageProps<"/[locale]/alerts">) {
@@ -26,11 +27,12 @@ export default async function AlertsPage({ params }: PageProps<"/[locale]/alerts
   if (!rules.ok) return null;
 
   const canWrite = can(actor.role, "alerts:write");
-  const [hosts, devices, databases, endpoints] = canWrite
-    ? await Promise.all([listHosts(db, actor), listDevices(db, actor), listDatabases(db, actor), listEndpoints(db, actor)])
-    : [null, null, null, null];
+  const [hosts, devices, databases, endpoints, remediationActions] = canWrite
+    ? await Promise.all([listHosts(db, actor), listDevices(db, actor), listDatabases(db, actor), listEndpoints(db, actor), listRemediationActions(db, actor)])
+    : [null, null, null, null, null];
 
-  const sources: Record<"HOST" | "NETWORK_DEVICE" | "DATABASE" | "ENDPOINT", SourceOption[]> = {
+  const sources: Record<"HOST" | "NETWORK_DEVICE" | "DATABASE" | "ENDPOINT" | "remediationActions", SourceOption[]> = {
+    remediationActions: remediationActions?.ok ? remediationActions.value.map((action) => ({ id: action.id, label: action.name })) : [],
     HOST: hosts?.ok ? hosts.value.map((host) => ({ id: host.id, label: host.displayName ?? host.hostname })) : [],
     NETWORK_DEVICE: devices?.ok ? devices.value.map((device) => ({ id: device.id, label: device.name })) : [],
     DATABASE: databases?.ok ? databases.value.map((instance) => ({ id: instance.id, label: instance.name })) : [],

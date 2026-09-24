@@ -19,6 +19,7 @@ import (
 	"ikelyane-agent/internal/config"
 	"ikelyane-agent/internal/dbmetrics"
 	"ikelyane-agent/internal/pollerconfig"
+	"ikelyane-agent/internal/remediation"
 	"ikelyane-agent/internal/snmp"
 	"ikelyane-agent/internal/telemetry"
 )
@@ -183,7 +184,12 @@ func main() {
 	dbSt := newDBState(cfg)
 	defer dbSt.closeAll()
 
-	log.Printf("ikelyane-agent %s starting: server=%s interval=%s buffer=%s", Version, cfg.ServerURL, cfg.Interval, cfg.BufferDir)
+	remediationPolicy = &telemetry.RemediationPolicy{Mode: cfg.Remediation.Mode}
+	if cfg.Remediation.Mode == config.RemediationAllowlist {
+		remediationPolicy.AllowedSha256 = cfg.Remediation.AllowedSha256
+	}
+
+	log.Printf("ikelyane-agent %s starting: server=%s interval=%s buffer=%s remediation=%s", Version, cfg.ServerURL, cfg.Interval, cfg.BufferDir, cfg.Remediation.Mode)
 
 	if *once {
 		runCycle(collector, client, buf, snmpSt, dbSt)
@@ -196,6 +202,10 @@ func main() {
 	ticker := time.NewTicker(cfg.Interval)
 	defer ticker.Stop()
 
+	if cfg.Remediation.Mode != config.RemediationDisabled {
+		go runRemediationLoop(ctx, cfg)
+	}
+
 	runCycle(collector, client, buf, snmpSt, dbSt) // first sample immediately, don't wait a full interval
 	for {
 		select {
@@ -204,6 +214,50 @@ func main() {
 			return
 		case <-ticker.C:
 			runCycle(collector, client, buf, snmpSt, dbSt)
+		}
+	}
+}
+
+// remediationPolicy is reported in every telemetry payload (set once from the config at startup).
+var remediationPolicy *telemetry.RemediationPolicy
+
+// remediationPollInterval: how quickly a queued remediation starts. Only polled when the local policy
+// is not "disabled" — a host that never opted in never even asks.
+const remediationPollInterval = 10 * time.Second
+
+// runRemediationLoop runs jobs one at a time (never two scripts at once on a host), until ctx ends.
+// A job in progress when the agent stops is killed with it; the platform then times it out.
+func runRemediationLoop(ctx context.Context, cfg *config.Config) {
+	client := remediation.NewClient(cfg.ServerURL, cfg.KeyID, cfg.Secret)
+	ticker := time.NewTicker(remediationPollInterval)
+	defer ticker.Stop()
+	for {
+		for {
+			job, err := client.Next()
+			if err != nil {
+				log.Printf("remediation: %v", err)
+				break
+			}
+			if job == nil {
+				break
+			}
+			log.Printf("remediation: running execution %s (%s, sha256 %s)", job.ID, job.Runtime, job.Sha256)
+			result := remediation.Run(ctx, cfg.Remediation, *job)
+			log.Printf("remediation: execution %s %s %s", job.ID, result.Status, result.Reason)
+			for attempt := 1; attempt <= 3; attempt++ {
+				if err := client.Report(result); err == nil {
+					break
+				} else if attempt == 3 {
+					log.Printf("remediation: could not report execution %s: %v", job.ID, err)
+				} else {
+					time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
 }
@@ -229,7 +283,7 @@ func runCycle(collector *collect.Collector, client *telemetry.Client, buf *buffe
 	payload := telemetry.Payload{
 		SchemaVersion: telemetry.SchemaVersion,
 		SentAt:        now.UTC().Format(time.RFC3339),
-		Agent:         telemetry.AgentInfo{Version: Version},
+		Agent:         telemetry.AgentInfo{Version: Version, Remediation: remediationPolicy},
 		System:        sys,
 		SNMPDevices:   snmpDevices,
 		Databases:     databases,

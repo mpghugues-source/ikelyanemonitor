@@ -47,7 +47,15 @@ export type AuditAction =
   | "alert_rule.updated"
   | "alert_rule.enabled"
   | "alert_rule.disabled"
-  | "alert_rule.deleted";
+  | "alert_rule.deleted"
+  | "remediation_action.created"
+  | "remediation_action.updated"
+  | "remediation_action.enabled"
+  | "remediation_action.disabled"
+  | "remediation_action.deleted"
+  | "remediation.run_requested"
+  | "remediation.approved"
+  | "remediation.cancelled";
 
 export interface AuditEntry {
   action: AuditAction;

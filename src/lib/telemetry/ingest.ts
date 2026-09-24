@@ -52,7 +52,7 @@ export async function ingestTelemetry(
 
   const result = await db.$transaction(
     async (tx) => {
-      await recordHeartbeat(tx, agent, payload.agent.version, ctx.now);
+      await recordHeartbeat(tx, agent, payload.agent, ctx.now);
 
       const result: IngestResult = {
         metricsReceived: 0,

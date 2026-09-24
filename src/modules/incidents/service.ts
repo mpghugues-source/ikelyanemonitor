@@ -40,6 +40,8 @@ export interface IncidentRow {
     narrativePending: boolean;
     narrativeFailed: boolean;
   };
+  /** Remediation executions queued or suggested for this incident, newest first. */
+  remediations: Array<{ id: string; actionName: string; hostLabel: string | null; status: string; statusReason: string | null; exitCode: number | null }>;
   events: IncidentEventRow[];
 }
 
@@ -48,6 +50,11 @@ const EVENTS_PER_INCIDENT = 30;
 const INCIDENT_SELECT = {
   id: true, title: true, severity: true, status: true, sourceKind: true, sourceLabel: true, metric: true,
   triggerValue: true, peakValue: true, startedAt: true, acknowledgedAt: true, resolvedAt: true, resolutionNote: true,
+  remediations: {
+    orderBy: { createdAt: "desc" as const },
+    take: 5,
+    select: { id: true, status: true, statusReason: true, exitCode: true, action: { select: { name: true } }, host: { select: { hostname: true, displayName: true } } },
+  },
   anomalyScore: true, rcaFindings: true, rcaConfidence: true, rcaSummaryEn: true, rcaSummaryFr: true, rcaModel: true, rcaLlmRequestedAt: true, rcaLlmError: true,
   events: { orderBy: { createdAt: "asc" as const }, take: EVENTS_PER_INCIDENT, select: { id: true, type: true, message: true, actorId: true, data: true, createdAt: true } },
 } satisfies Prisma.IncidentSelect;
@@ -60,8 +67,11 @@ async function toRows(db: Db, incidents: IncidentPayload[]): Promise<IncidentRow
   const users = actorIds.length ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, email: true } }) : [];
   const emailById = new Map(users.map((user) => [user.id, user.email]));
 
-  return incidents.map(({ rcaFindings, rcaConfidence, rcaSummaryEn, rcaSummaryFr, rcaModel, rcaLlmRequestedAt, rcaLlmError, ...incident }) => ({
+  return incidents.map(({ rcaFindings, rcaConfidence, rcaSummaryEn, rcaSummaryFr, rcaModel, rcaLlmRequestedAt, rcaLlmError, remediations, ...incident }) => ({
     ...incident,
+    remediations: remediations.map((r) => ({
+      id: r.id, actionName: r.action.name, hostLabel: r.host ? (r.host.displayName ?? r.host.hostname) : null, status: r.status, statusReason: r.statusReason, exitCode: r.exitCode,
+    })),
     rca: {
       findings: (rcaFindings as unknown as RcaFindings | null) ?? null,
       confidence: rcaConfidence,

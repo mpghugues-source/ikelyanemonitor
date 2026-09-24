@@ -1,7 +1,7 @@
 import { HealthStatus, OsFamily, type Prisma } from "@/generated/prisma/client";
 import type { AuthenticatedAgent } from "@/lib/telemetry/auth";
 import { type IngestContext, type MetricRow, parseCollectedAt, systemMetricRows } from "@/lib/telemetry/metrics";
-import type { SystemMetrics } from "@/lib/telemetry/schemas";
+import type { SystemMetrics, TelemetryPayload } from "@/lib/telemetry/schemas";
 
 const OS_FAMILY = {
   windows: OsFamily.WINDOWS,
@@ -18,7 +18,7 @@ const OS_FAMILY = {
 export async function recordHeartbeat(
   tx: Prisma.TransactionClient,
   agent: AuthenticatedAgent,
-  agentVersion: string,
+  agentInfo: TelemetryPayload["agent"],
   now: Date,
 ): Promise<void> {
   await tx.monitoredHost.update({
@@ -26,7 +26,10 @@ export async function recordHeartbeat(
     data: {
       status: HealthStatus.UP,
       lastSeenAt: now,
-      agentVersion,
+      agentVersion: agentInfo.version,
+      // An agent that does not report a policy (older version) is treated as not accepting remediation.
+      remediationMode: agentInfo.remediation?.mode ?? "disabled",
+      remediationAllowlist: agentInfo.remediation?.mode === "allowlist" ? agentInfo.remediation.allowedSha256 : [],
       ...(agent.firstSeenAt ? {} : { firstSeenAt: now }),
     },
   });

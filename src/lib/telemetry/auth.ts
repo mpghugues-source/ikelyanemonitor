@@ -10,6 +10,11 @@ export interface AuthenticatedAgent {
   hostname: string;
   keyId: string;
   firstSeenAt: Date | null;
+  /**
+   * The host's valid HMAC secret(s), to SIGN responses the agent must be able to trust (remediation
+   * jobs). Never log, never serialize.
+   */
+  responseSecrets: readonly string[];
 }
 
 export interface AuthInput {
@@ -100,5 +105,6 @@ export async function authenticateAgent(db: PrismaClient, input: AuthInput): Pro
     hostname: host.hostname,
     keyId: host.keyId,
     firstSeenAt: host.firstSeenAt,
+    responseSecrets: secrets,
   };
 }

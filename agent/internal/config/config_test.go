@@ -3,13 +3,14 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{envServerURL, envKeyID, envSecret, envInterval, envBufferDir, envDatabasesJSON} {
+	for _, name := range []string{envServerURL, envKeyID, envSecret, envInterval, envBufferDir, envDatabasesJSON, envRemediationMode, envRemediationAllowed, envRemediationWorkDir} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
@@ -224,5 +225,50 @@ func TestLoad_Databases_DuplicateNameRejected(t *testing.T) {
 	]`)
 	if _, err := Load(""); err == nil {
 		t.Fatal("two databases with the same name must be rejected: the server upserts on that name")
+	}
+}
+
+func TestLoad_Remediation_DisabledByDefault(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Remediation.Mode != RemediationDisabled || cfg.Remediation.WorkDir != DefaultRemediationDir {
+		t.Fatalf("got %+v: remediation must be OFF unless the host owner turns it on", cfg.Remediation)
+	}
+}
+
+func TestLoad_Remediation_AllowlistFromEnvironment(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	sha := strings.Repeat("ab", 32)
+	t.Setenv(envRemediationMode, "allowlist")
+	t.Setenv(envRemediationAllowed, " "+strings.ToUpper(sha)+" , ")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Remediation.AllowedSha256) != 1 || cfg.Remediation.AllowedSha256[0] != sha {
+		t.Fatalf("got %+v, want the hash trimmed and lower-cased", cfg.Remediation.AllowedSha256)
+	}
+}
+
+func TestLoad_Remediation_Invalid(t *testing.T) {
+	for _, tc := range []struct{ mode, allowed string }{
+		{"everything", ""},          // unknown mode
+		{"allowlist", ""},           // allowlist without entries
+		{"allowlist", "not-a-hash"}, // malformed hash
+	} {
+		clearEnv(t)
+		validBaseEnv(t)
+		t.Setenv(envRemediationMode, tc.mode)
+		if tc.allowed != "" {
+			t.Setenv(envRemediationAllowed, tc.allowed)
+		}
+		if _, err := Load(""); err == nil {
+			t.Errorf("mode=%q allowed=%q must be rejected", tc.mode, tc.allowed)
+		}
 	}
 }

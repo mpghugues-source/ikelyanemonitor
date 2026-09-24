@@ -21,6 +21,14 @@ type Payload struct {
 
 type AgentInfo struct {
 	Version string `json:"version"`
+	// Remediation is this host's LOCAL remediation policy (internal/config), reported so the platform
+	// only queues what the host accepts. Informative only: the agent enforces it itself regardless.
+	Remediation *RemediationPolicy `json:"remediation,omitempty"`
+}
+
+type RemediationPolicy struct {
+	Mode          string   `json:"mode"` // disabled | allowlist | any
+	AllowedSha256 []string `json:"allowedSha256,omitempty"`
 }
 
 // Inventory is sent at startup and periodically thereafter (see Collector.inventoryEvery) rather

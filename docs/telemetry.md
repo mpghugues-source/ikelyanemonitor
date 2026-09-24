@@ -81,7 +81,8 @@ req.Header.Set("X-Ikelyane-Signature", fmt.Sprintf("t=%d,v1=%s", t, sig))
 {
   "schemaVersion": 1,                       // must be 1
   "sentAt": "2026-09-21T20:00:00Z",         // ISO-8601 with timezone
-  "agent": { "version": "0.1.0" },
+  "agent": { "version": "0.1.0",
+             "remediation": { "mode": "allowlist", "allowedSha256": ["<64 hex>"] } },  // optional, see 3c
   "system":       { … },                    // optional  — this host
   "snmpDevices":  [ … ],                    // optional  — up to 200 devices
   "databases":    [ … ]                     // optional  — up to 100 instances
@@ -199,6 +200,36 @@ Same error codes as `POST /api/v1/telemetry` (401/403/500 — there is no reques
 malformed, so no 400/413/422 here). Poll this on startup and periodically (e.g. every few minutes)
 to pick up devices added, removed or reassigned in the web UI; there is no push notification.
 Results for `snmpDevices` still go through `POST /api/v1/telemetry` like everything else.
+
+## 3c. Remediation jobs
+
+Only for agents whose LOCAL policy allows remediation (`agent.remediation.mode` = `allowlist` or `any`,
+reported in every telemetry payload; an agent that omits it is treated as `disabled` and is never
+given jobs). See [`agent/README.md` "Remediation"](../agent/README.md#remediation) for the trust model.
+
+**`GET /api/v1/remediation/next`** — signed like `/poller-config` (over an empty body). Hands out the
+oldest queued job for this host and marks it running:
+
+```jsonc
+// 200 — the RESPONSE is signed too: X-Ikelyane-Signature: t=<unix>,v1=<hmac>[,v1=…]
+// computed with the host's secret over the exact response body (one v1 per valid secret during a
+// rotation). Agents must verify it (and that t is within 5 minutes) before using the job.
+{ "execution": null }
+{ "execution": { "id": "cm…", "runtime": "bash", "script": "#!/usr/bin/env bash\n…", "sha256": "<hex of script>",
+                 "args": { "SERVICE": "nginx" }, "timeoutSec": 60, "incidentId": "cm…" | null } }
+```
+
+**`POST /api/v1/remediation/result`** — signed like telemetry. Body:
+
+```jsonc
+{ "executionId": "cm…", "status": "succeeded" | "failed" | "timed_out" | "skipped",
+  "reason": "refused_by_agent_policy" | "unsupported_runtime" | "interpreter_not_found" | "start_failed",  // optional
+  "exitCode": 0, "durationMs": 1234, "stdout": "…", "stderr": "…" }   // outputs ≤ 64 KiB each
+```
+
+`200 {"status":"ok"}`; `409 not_running` when that execution is not running for this host (already
+reported, or timed out by the platform: a job with no result `timeoutSec + 2 min` after delivery is
+marked `TIMED_OUT` / `agent_lost`); `422 invalid_payload`.
 
 ## 4. Responses
 

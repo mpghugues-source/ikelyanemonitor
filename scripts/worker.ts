@@ -1,7 +1,8 @@
 /**
  * Background worker — everything that must not run inside a web request:
  *   • the synthetic check runner (probes the endpoints of the SaaS page);
- *   • the optional Claude narratives for root-cause analyses (only when ANTHROPIC_API_KEY is set).
+ *   • the optional Claude narratives for root-cause analyses (only when ANTHROPIC_API_KEY is set);
+ *   • remediation housekeeping: expiring unclaimed/unapproved jobs, timing out jobs an agent never reported.
  *
  *   DATABASE_URL=… IKELYANE_SECRET_KEY=… npm run worker
  *
@@ -13,7 +14,28 @@ import { getEnv } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
 import { llmEnabled } from "@/modules/aiops/rca";
 import { defaultDeps, runNarrativeLoop } from "@/modules/aiops/rca-llm";
+import { sweepExecutions } from "@/modules/remediation/executions";
 import { runCheckLoop } from "@/modules/saas/runner/runner";
+
+/** Run `task` every `ms` until `signal` aborts; errors are logged, never fatal. */
+async function every(ms: number, signal: AbortSignal, task: () => Promise<unknown>): Promise<void> {
+  while (!signal.aborted) {
+    try {
+      await task();
+    } catch (error) {
+      console.error("[worker] periodic task failed", error);
+    }
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      signal.addEventListener("abort", done, { once: true });
+    });
+  }
+}
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -38,6 +60,12 @@ async function main(): Promise<void> {
       allowPrivateTargets: env.CHECKS_ALLOW_PRIVATE_TARGETS,
     }),
   ];
+  loops.push(
+    every(30_000, controller.signal, async () => {
+      const swept = await sweepExecutions(db);
+      if (swept > 0) console.log(`[worker] remediation: ${swept} execution(s) expired or timed out`);
+    }),
+  );
   if (llmEnabled()) {
     const deps = defaultDeps();
     console.log(`[worker] Claude RCA narratives enabled: model=${deps.model}, at most ${env.AIOPS_LLM_MAX_PER_HOUR}/hour`);

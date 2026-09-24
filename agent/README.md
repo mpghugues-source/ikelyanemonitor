@@ -3,7 +3,8 @@
 The IkelyaneMonitor agent: collects host metrics (CPU, memory, disks, network, temperature,
 uptime, process count), polls SNMP network devices assigned to it in the web UI (routers,
 switches, firewalls, APs, UPSes, BMCs — v1/v2c/v3) and monitors PostgreSQL / MySQL / MariaDB
-instances configured locally, reporting everything over the signed HTTP protocol described in
+instances configured locally, and — only if this host's owner opts in — runs remediation scripts sent
+by the platform. Everything goes over the signed HTTP protocol described in
 [`docs/telemetry.md`](../docs/telemetry.md).
 
 ## SNMP
@@ -77,6 +78,56 @@ On MySQL/MariaDB, `information_schema.tables` only lists tables the account has 
 with the grants above, **storage used is not reported**. Add `GRANT SELECT ON <schema>.* …` for the
 schemas whose size you want counted (this also lets the account read their data — your call).
 
+## Remediation
+
+The platform can ask agents to run **remediation scripts** (by hand, or when an alert fires). That is
+remote code execution by design, so this host decides — here, in its own configuration, never from the
+web UI — whether and what it runs:
+
+| `remediation.mode` | What runs |
+|---|---|
+| `disabled` (**default**) | Nothing. The agent does not even ask for jobs. |
+| `allowlist` | Only scripts whose SHA-256 is listed in `remediation.allowedSha256` (shown next to each action on the Auto-remediation page). **Even a compromised platform cannot make this host run anything else.** Changing a script means updating this list. |
+| `any` | Any script an administrator of your IkelyaneMonitor organization writes. Convenient; trusts the platform and its administrators with this host. |
+
+The agent reports its mode (and allowlist) with every sample, so the platform only queues what the host
+accepts and the UI shows why a run was refused — but the agent enforces its policy itself regardless.
+For every job it also:
+
+- refuses it unless the platform's response is signed with this host's secret (`X-Ikelyane-Signature`,
+  verified before anything is parsed) and the script matches the SHA-256 announced for it;
+- writes the script to `remediation.workDir` (default `/var/lib/ikelyane-agent/remediation`, created
+  `0700`) and hands it to the interpreter — `bash --noprofile --norc`, `pwsh`/`powershell -NoProfile
+  -NonInteractive`, or `python3 -I` — then deletes it;
+- runs it in a **clean environment**: a fixed `PATH`, `LANG`, `HOME`=work dir, `IKELYANE_EXECUTION_ID`,
+  `IKELYANE_INCIDENT_ID` (alert runs) and one `IKELYANE_ARG_<NAME>` per argument. Nothing from the
+  agent's own environment (its HMAC secret, database DSNs…) is visible to scripts. Arguments are only
+  ever environment variables, never pasted into the script text;
+- kills the script's whole process group at its timeout (Unix; on Windows only the process itself);
+- keeps at most 64 KiB of stdout and of stderr, and runs one job at a time.
+
+Jobs are polled every 10 seconds (only when the mode is not `disabled`).
+
+### Privileges
+
+Scripts run as the agent's user. With the provided systemd unit that is the unprivileged
+`ikelyane-agent` user, on a read-only system (`ProtectSystem=strict`) with `NoNewPrivileges=true` —
+so `sudo` cannot work, by design. Grant exactly what your scripts need instead, e.g. letting the agent
+restart one service through polkit (works under `NoNewPrivileges`, no setuid involved):
+
+```js
+// /etc/polkit-1/rules.d/50-ikelyane-agent.rules
+polkit.addRule(function (action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" && subject.user == "ikelyane-agent" &&
+      action.lookup("unit") == "nginx.service" && action.lookup("verb") == "restart") {
+    return polkit.Result.YES;
+  }
+});
+```
+
+Loosening the unit itself (`ReadWritePaths=`, dropping `NoNewPrivileges`, `User=root`) is possible in
+a drop-in (`systemctl edit ikelyane-agent`), at the cost of giving every allowed script those rights.
+
 ## Build
 
 Requires Go 1.25+.
@@ -122,6 +173,7 @@ Two ways, in order of precedence:
      "secret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
      "intervalSeconds": 60,
      "bufferDir": "/var/lib/ikelyane-agent/buffer",
+     "remediation": { "mode": "allowlist", "allowedSha256": ["<sha-256 shown in the web UI>"] },
      "databases": [
        { "name": "main:5432", "engine": "postgresql",
          "dsn": "postgres://ikelyane_agent:…@127.0.0.1:5432/postgres?sslmode=disable" },
@@ -145,6 +197,9 @@ Two ways, in order of precedence:
    | `IKELYANE_INTERVAL_SECONDS` | no | `60` (minimum `10`) |
    | `IKELYANE_BUFFER_DIR` | no | `/var/lib/ikelyane-agent/buffer` |
    | `IKELYANE_DATABASES_JSON` | no | — (the `databases` array above, as JSON) |
+   | `IKELYANE_REMEDIATION_MODE` | no | `disabled` (`allowlist` \| `any`) |
+   | `IKELYANE_REMEDIATION_ALLOWED_SHA256` | with `allowlist` | — (comma-separated SHA-256) |
+   | `IKELYANE_REMEDIATION_WORK_DIR` | no | `/var/lib/ikelyane-agent/remediation` |
 
    See [`ikelyane-agent.example.env`](ikelyane-agent.example.env).
 
@@ -209,6 +264,7 @@ internal/config/       loads IKELYANE_* env vars or a JSON file
 internal/collect/      gopsutil-based host metrics, with per-cycle rate calculation for IOPS/bandwidth
 internal/snmp/         SNMP v1/v2c/v3 polling (github.com/gosnmp/gosnmp) — MIB-II/IF-MIB, counter-delta rates
 internal/dbmetrics/    PostgreSQL (pgx) / MySQL-MariaDB (go-sql-driver) monitoring, slow-query interval deltas
+internal/remediation/  local remediation policy, sandboxed script runner, signed job fetch/report
 internal/pollerconfig/ fetches the assigned SNMP device list (+ decrypted credentials) from the server
 internal/telemetry/    wire types (mirrors src/lib/telemetry/schemas.ts), HMAC signing, HTTP client
 internal/buffer/       disk-backed retry queue for when the server is unreachable

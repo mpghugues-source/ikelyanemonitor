@@ -76,3 +76,15 @@ export function verifySignature(secrets: readonly string[], parsed: ParsedSignat
 export function isTimestampFresh(timestampSeconds: number, nowMs: number, maxSkewSeconds: number): boolean {
   return Math.abs(nowMs / 1000 - timestampSeconds) <= maxSkewSeconds;
 }
+
+/**
+ * Signature header for a RESPONSE the agent must be able to trust (remediation jobs): same scheme as
+ * requests, one `v1=` per valid host secret so an agent mid-rotation verifies with whichever it holds.
+ * Protects against anything between the agent and the platform that is not the platform (a TLS
+ * interception proxy, a mistyped plain-http URL), not against a compromised platform — that is what the
+ * agent's local remediation policy is for.
+ */
+export function signResponse(secrets: readonly string[], rawBody: string, nowMs: number): string {
+  const t = Math.floor(nowMs / 1000);
+  return [`t=${t}`, ...secrets.map((secret) => `v1=${computeSignature(secret, t, rawBody)}`)].join(",");
+}

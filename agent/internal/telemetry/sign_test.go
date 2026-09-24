@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,5 +35,32 @@ func TestSign_DifferentBodiesProduceDifferentSignatures(t *testing.T) {
 	b := Sign("secret", []byte(`{"a":2}`), at)
 	if a == b {
 		t.Fatal("signatures for different bodies must differ")
+	}
+}
+
+func TestVerifyResponse(t *testing.T) {
+	now := time.Unix(1_758_000_000, 0)
+	body := []byte(`{"execution":null}`)
+	header := Sign("s3cret", body, now)
+
+	if err := VerifyResponse("s3cret", header, body, now.Add(30*time.Second), 5*time.Minute); err != nil {
+		t.Fatalf("valid response refused: %v", err)
+	}
+	if err := VerifyResponse("s3cret", header, []byte(`{"execution":{"id":"x"}}`), now, 5*time.Minute); err == nil {
+		t.Error("a tampered body must be refused")
+	}
+	if err := VerifyResponse("other", header, body, now, 5*time.Minute); err == nil {
+		t.Error("a signature from another secret must be refused")
+	}
+	if err := VerifyResponse("s3cret", header, body, now.Add(10*time.Minute), 5*time.Minute); err == nil {
+		t.Error("a replayed (stale) response must be refused")
+	}
+	if err := VerifyResponse("s3cret", "", body, now, 5*time.Minute); err == nil {
+		t.Error("an unsigned response must be refused")
+	}
+	// Rotation: several v1 values, any one matching is enough.
+	rotated := strings.Replace(Sign("new-secret", body, now), ",v1=", ",v1="+strings.Repeat("0", 64)+",v1=", 1)
+	if err := VerifyResponse("new-secret", rotated, body, now, 5*time.Minute); err != nil {
+		t.Errorf("multi-signature header refused: %v", err)
 	}
 }

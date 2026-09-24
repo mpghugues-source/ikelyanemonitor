@@ -190,7 +190,7 @@ describe.skipIf(!enabled)("synthetic check runner", () => {
     const rule = await rules.createAlertRule(db, org.ADMIN, {
       name: "Website down", description: null, sourceKind: "ENDPOINT", sourceId: id, metric: "ENDPOINT_AVAILABLE",
       instanceFilter: null, operator: "LT", threshold: 1, anomalyDetection: false, anomalySensitivity: "MEDIUM", durationSec: 0, severity: "CRITICAL",
-      channels: [], notifyEmails: [], webhookUrl: null, cooldownSec: 900,
+      channels: [], notifyEmails: [], webhookUrl: null, cooldownSec: 900, remediationActionId: null, autoRemediate: false,
     });
     expect(rule.ok).toBe(true);
 

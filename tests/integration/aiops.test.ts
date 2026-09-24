@@ -46,7 +46,7 @@ describe.skipIf(!enabled)("AIOps", () => {
   const rule = (overrides: Partial<Parameters<typeof rules.createAlertRule>[2]> = {}): Parameters<typeof rules.createAlertRule>[2] => ({
     name: "CPU unusual", description: null, sourceKind: "HOST", sourceId: null, metric: "CPU_USAGE_PERCENT", instanceFilter: null,
     operator: null, threshold: null, anomalyDetection: true, anomalySensitivity: "MEDIUM", durationSec: 0, severity: "WARNING",
-    channels: [], notifyEmails: [], webhookUrl: null, cooldownSec: 900, ...overrides,
+    channels: [], notifyEmails: [], webhookUrl: null, cooldownSec: 900, remediationActionId: null, autoRemediate: false, ...overrides,
   });
 
   /** A week of normal CPU around 20 % (± 2), where the baseline looks: last 6 h + ±30 min on each past day. */

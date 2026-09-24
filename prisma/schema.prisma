@@ -569,6 +569,11 @@ model MonitoredHost {
   org                   Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   databases             DatabaseInstance[]
   polledDevices         NetworkDevice[]
+  /// Remediation policy reported by the agent from its LOCAL config (the host owner's consent):
+  /// "disabled" | "allowlist" | "any"; null = agent too old to report it (treated as disabled).
+  remediationMode       String?
+  /// SHA-256 (hex) of the only scripts this host accepts in "allowlist" mode, as reported by the agent.
+  remediationAllowlist  String[]
   remediationActions    RemediationAction[]
   remediationExecutions RemediationExecution[]
   finopsRecommendations FinOpsRecommendation[]
@@ -1072,6 +1077,17 @@ model RemediationExecution {
   hostId     String?
   trigger    ExecutionTrigger
   status     ExecutionStatus  @default(PENDING)
+  /// Stable code explaining SKIPPED/CANCELLED/FAILED outcomes decided by the platform or the agent
+  /// (src/modules/remediation/constants.ts), translated by the UI.
+  statusReason String?
+
+  // ── Snapshot of what runs, frozen when the execution is created: an approval approves exactly this,
+  //    and later edits of the action never change a queued execution. ──
+  runtime      ScriptRuntime
+  scriptBody   String        @db.Text
+  scriptSha256 String
+  args         Json?
+  timeoutSec   Int
 
   requestedBy String?
   approvedBy  String?
@@ -1092,6 +1108,7 @@ model RemediationExecution {
   @@index([orgId, createdAt(sort: Desc)])
   @@index([actionId, createdAt(sort: Desc)])
   @@index([incidentId])
+  @@index([hostId, status, createdAt])
   @@map("remediation_executions")
 }
 

@@ -239,7 +239,19 @@ export const TelemetryPayloadSchema = z
     schemaVersion: z.literal(TELEMETRY_SCHEMA_VERSION),
     /** When the agent built the request (used for diagnostics, not for the metrics' own times). */
     sentAt: timestamp,
-    agent: z.object({ version: z.string().trim().min(1).max(64) }),
+    agent: z.object({
+      version: z.string().trim().min(1).max(64),
+      /**
+       * The remediation policy of the agent's LOCAL configuration — the host owner's consent. The
+       * platform only queues remediations the host accepts; the agent enforces it again on its side.
+       */
+      remediation: z
+        .object({
+          mode: z.enum(["disabled", "allowlist", "any"]),
+          allowedSha256: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(200).default([]),
+        })
+        .optional(),
+    }),
     system: SystemMetricsSchema.optional(),
     snmpDevices: SNMPDevicesSchema.optional(),
     databases: DatabaseMetricsSchema.optional(),

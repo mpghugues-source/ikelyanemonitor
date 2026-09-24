@@ -29,7 +29,7 @@ React Flow · Prisma 7 · PostgreSQL 17 + TimescaleDB · Zod.
 | Synthetic HTTP(S) checks — run by the background worker (`npm run worker`): status/body assertions, redirects, TLS expiry, availability 24 h / 30 days vs SLA, "check now", SSRF-guarded, alerts on `ENDPOINT_*` metrics | ✅ done |
 | `ikelyane-agent` (Go) — host metrics (CPU/memory/disks/network/temperature/uptime) + SNMP v1/v2c/v3 device polling (fetches its assignment + credentials from the server) + PostgreSQL/MySQL/MariaDB monitoring (connections, QPS, cache, deadlocks, replication, storage, engine-normalized slow queries), signed delivery, offline buffering | ✅ done; see [`agent/`](agent) |
 | AIOps — anomaly detection (robust baseline with daily seasonality, per-rule sensitivity, combinable with a threshold) and root-cause analysis (dependency map + time correlation, explained in the UI; optional Claude narrative EN/FR when `ANTHROPIC_API_KEY` is set) | ✅ done |
-| Auto-remediation execution | ⏳ next (schema ready) |
+| Auto-remediation — scripts run by the agents, by hand or when an alert fires, with approvals, guard-rails (cooldown, hourly cap, OS filter, no duplicates) and a host-side consent the platform cannot override (`disabled` by default, SHA-256 allowlist, or any) | ✅ done; see [`agent/README.md`](agent/README.md#remediation) |
 | Agent: MongoDB/Redis/SQL Server · SSE/WebSocket live streaming | ⏳ next — protocol is specified in `docs/telemetry.md` |
 
 ## Quick start
@@ -118,6 +118,12 @@ agent/                         ikelyane-agent (Go) — separate module, see agen
   CGNAT, IPv4-mapped IPv6 etc. are refused (`src/modules/saas/runner/target-guard.ts`). Only a
   single-tenant install monitoring its own LAN should set `CHECKS_ALLOW_PRIVATE_TARGETS=true`.
   Configured request headers are never forwarded to another origin on redirect.
+- **Auto-remediation is opt-in on each host, not on the platform:** a script only runs if the host's
+  own agent configuration allows it — `disabled` by default; in `allowlist` mode only scripts whose
+  SHA-256 the host owner listed, so a compromised platform or administrator account cannot run new code
+  there. Only administrators write scripts (audited with their SHA-256); an execution runs a snapshot
+  frozen when it was queued (what gets approved is what runs); jobs are delivered in HMAC-signed
+  responses and run in a clean environment without the agent's secrets.
 - **AIOps and external AI:** anomaly detection and root-cause analysis run locally. Nothing is sent to
   an AI provider unless `ANTHROPIC_API_KEY` is set; then, for each analyzed incident, the worker sends
   Claude the incident (title, severity, source label, metric and values), the computed findings (labels

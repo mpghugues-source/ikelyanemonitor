@@ -49,6 +49,8 @@ const ruleSchema = z.object({
   notifyEmails: emailListSchema,
   webhookUrl: httpUrlSchema,
   cooldownSec: z.coerce.number().int().min(60).max(86400),
+  remediationActionId: z.string().trim().max(64).optional(),
+  autoRemediate: z.enum(["true"]).optional().transform((value) => value === "true"),
 });
 
 /**
@@ -64,6 +66,7 @@ function toInput(data: z.infer<typeof ruleSchema>) {
     instanceFilter: data.instanceFilter || null,
     webhookUrl: data.webhookUrl || null,
     channels: data.channels ?? [],
+    remediationActionId: data.remediationActionId || null,
   };
 }
 

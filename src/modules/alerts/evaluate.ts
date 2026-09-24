@@ -4,6 +4,7 @@ import type { MetricRow } from "@/lib/telemetry/metrics";
 import { assess, type AnomalyVerdict, type Baseline } from "@/modules/aiops/anomaly";
 import { loadBaseline } from "@/modules/aiops/baseline";
 import { analyzeAfterOpen } from "@/modules/aiops/rca";
+import { triggerForIncident } from "@/modules/remediation/executions";
 import { AUTO_RESOLUTION_NOTE } from "@/modules/alerts/constants";
 import { dispatchIncidentNotification, type NotifiableIncident, type NotifiableRule, type NotificationOutcome, shouldRenotify } from "@/modules/alerts/notify";
 import { resolveSourceLabels } from "@/modules/alerts/resolve-source";
@@ -232,6 +233,12 @@ export async function evaluateIngestedMetrics(db: PrismaClient, orgId: string, r
           await analyzeAfterOpen(db, orgId, incident.id, now);
         } catch (error) {
           console.error("[aiops] root-cause analysis failed", error);
+        }
+        // Self-healing: queue (or suggest, pending approval) the rule's remediation — best-effort too.
+        try {
+          await triggerForIncident(db, rule, incident, now);
+        } catch (error) {
+          console.error("[remediation] trigger failed", error);
         }
       } else if (sustained && open) {
         const updated = await db.incident.update({

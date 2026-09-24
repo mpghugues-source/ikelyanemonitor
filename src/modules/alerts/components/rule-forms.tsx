@@ -22,11 +22,13 @@ export interface SourceOption {
   label: string;
 }
 
+/** Choices for the form's selects: sources per kind, plus the organization's remediation actions. */
 interface SourceOptions {
   HOST: SourceOption[];
   NETWORK_DEVICE: SourceOption[];
   DATABASE: SourceOption[];
   ENDPOINT: SourceOption[];
+  remediationActions: SourceOption[];
 }
 
 function RuleFields({ rule, sources }: { rule?: AlertRuleRow; sources: SourceOptions }) {
@@ -149,6 +151,23 @@ function RuleFields({ rule, sources }: { rule?: AlertRuleRow; sources: SourceOpt
       <div className="space-y-2">
         <Label htmlFor="cooldownSec">{t("alerts.cooldown")} (s)</Label>
         <Input id="cooldownSec" name="cooldownSec" type="number" min={60} max={86400} required defaultValue={rule?.cooldownSec ?? 900} />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="remediationActionId">{t("alertsAdmin.remediationAction")}</Label>
+        <NativeSelect id="remediationActionId" name="remediationActionId" defaultValue={rule?.remediationActionId ?? ""}>
+          <option value="">{t("alertsAdmin.noRemediation")}</option>
+          {sources.remediationActions.map((action) => (
+            <option key={action.id} value={action.id}>{action.label}</option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <Checkbox name="autoRemediate" value="true" defaultChecked={rule?.autoRemediate ?? false} data-testid="rule-auto-remediate" />
+          {t("remediation.autoRemediate")}
+        </label>
+        <p className="text-xs text-muted-foreground">{t("alertsAdmin.autoRemediateHelp")}</p>
       </div>
     </div>
   );

@@ -32,6 +32,8 @@ export interface AlertRuleRow {
   notifyEmails: string[];
   webhookUrl: string | null;
   cooldownSec: number;
+  remediationActionId: string | null;
+  autoRemediate: boolean;
   createdAt: Date;
 }
 
@@ -43,7 +45,7 @@ export async function listAlertRules(db: Db, actor: Actor): Promise<Result<Alert
     select: {
       id: true, name: true, description: true, enabled: true, sourceKind: true, sourceId: true, metric: true,
       instanceFilter: true, operator: true, threshold: true, anomalyDetection: true, anomalySensitivity: true, durationSec: true, severity: true, channels: true,
-      notifyEmails: true, webhookUrl: true, cooldownSec: true, createdAt: true,
+      notifyEmails: true, webhookUrl: true, cooldownSec: true, remediationActionId: true, autoRemediate: true, createdAt: true,
     },
   });
 
@@ -83,9 +85,17 @@ export interface AlertRuleInput {
   notifyEmails: string[];
   webhookUrl: string | null;
   cooldownSec: number;
+  /** Remediation to queue (or suggest) when the rule opens an incident. */
+  remediationActionId: string | null;
+  /** Run it without a human — only if the action itself does not require approval. */
+  autoRemediate: boolean;
 }
 
-export type AlertRuleWriteError = "forbidden" | "invalid_source" | "not_found" | "condition_required";
+export type AlertRuleWriteError = "forbidden" | "invalid_source" | "not_found" | "condition_required" | "invalid_remediation";
+
+async function remediationInOrg(db: PrismaClient, orgId: string, id: string | null): Promise<boolean> {
+  return !id || (await db.remediationAction.count({ where: { id, orgId } })) === 1;
+}
 
 /** A rule needs a complete threshold, anomaly detection, or both (mirrors the alert_rules CHECK constraint). */
 function conditionError(input: AlertRuleInput): "condition_required" | null {
@@ -99,6 +109,7 @@ export async function createAlertRule(db: PrismaClient, actor: Actor, input: Ale
   const invalid = conditionError(input);
   if (invalid) return fail(invalid);
   if (input.sourceId && !(await sourceExists(db, actor.orgId, input.sourceKind, input.sourceId))) return fail("invalid_source");
+  if (!(await remediationInOrg(db, actor.orgId, input.remediationActionId))) return fail("invalid_remediation");
 
   return db.$transaction(async (tx) => {
     const rule = await tx.alertRule.create({ data: { orgId: actor.orgId, ...input }, select: { id: true } });
@@ -121,6 +132,7 @@ export async function updateAlertRule(db: PrismaClient, actor: Actor, id: string
   const invalid = conditionError(input);
   if (invalid) return fail(invalid);
   if (input.sourceId && !(await sourceExists(db, actor.orgId, input.sourceKind, input.sourceId))) return fail("invalid_source");
+  if (!(await remediationInOrg(db, actor.orgId, input.remediationActionId))) return fail("invalid_remediation");
 
   return db.$transaction(async (tx) => {
     const result = await tx.alertRule.updateMany({ where: { id, orgId: actor.orgId }, data: input });

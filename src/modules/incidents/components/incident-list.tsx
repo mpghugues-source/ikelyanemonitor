@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDuration } from "@/lib/format";
 import { AUTO_RESOLUTION_NOTE, metricTypeMessageKey, sourceKindMessageKey } from "@/modules/alerts/constants";
 import type { RcaIncidentRef } from "@/modules/aiops/rca";
+import { ExecutionDecision } from "@/modules/remediation/components/remediation-forms";
+import { STATUS_REASONS } from "@/modules/remediation/constants";
 import type { IncidentRow } from "@/modules/incidents/service";
 
 const NAMESPACES = ["incidentsAdmin.errors", "auth.errors"];
@@ -188,6 +190,38 @@ function RcaPanel({ incident, canAct }: { incident: IncidentRow; canAct: boolean
   );
 }
 
+const EXECUTION_STATUS_KEY: Record<string, string> = {
+  PENDING: "pending", AWAITING_APPROVAL: "awaitingApproval", RUNNING: "running", SUCCEEDED: "succeeded",
+  FAILED: "failed", TIMED_OUT: "timedOut", SKIPPED: "skipped", CANCELLED: "cancelled",
+};
+
+function RemediationList({ incident, canAct }: { incident: IncidentRow; canAct: boolean }) {
+  const t = useTranslations("remediation");
+  if (incident.remediations.length === 0) return null;
+  return (
+    <section className="space-y-2 rounded-md border p-3 text-sm" data-testid="incident-remediations">
+      <h3 className="font-medium">{t("title")}</h3>
+      <ul className="space-y-2">
+        {incident.remediations.map((execution) => {
+          const reason = STATUS_REASONS.find((r) => r === execution.statusReason);
+          return (
+            <li key={execution.id} className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="font-medium">{execution.actionName}</span>
+                {execution.hostLabel ? <span className="text-muted-foreground"> — {execution.hostLabel}</span> : null}
+                <span className="ml-2"><Badge variant="secondary" data-testid="incident-remediation-status">{t(`executionStatus.${EXECUTION_STATUS_KEY[execution.status] ?? "pending"}`)}</Badge></span>
+                {reason ? <div className="text-xs text-muted-foreground">{t(`reason.${reason}`)}</div> : null}
+                {execution.exitCode !== null ? <div className="text-xs text-muted-foreground">{t("exitCode")}: {execution.exitCode}</div> : null}
+              </div>
+              {canAct ? <ExecutionDecision executionId={execution.id} status={execution.status} /> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function IncidentCard({ incident, canAct, now }: { incident: IncidentRow; canAct: boolean; now: Date }) {
   const t = useTranslations();
   const ti = useTranslations("incidents");
@@ -224,6 +258,7 @@ export function IncidentCard({ incident, canAct, now }: { incident: IncidentRow;
         ) : null}
 
         <RcaPanel incident={incident} canAct={canAct} />
+        <RemediationList incident={incident} canAct={canAct} />
 
         {canAct ? (
           <div className="flex flex-wrap items-center gap-2">

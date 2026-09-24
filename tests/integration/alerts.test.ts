@@ -79,6 +79,8 @@ describe.skipIf(!enabled)("alerts and incidents", () => {
     threshold: 90,
     anomalyDetection: false,
     anomalySensitivity: "MEDIUM" as const,
+    remediationActionId: null,
+    autoRemediate: false,
     durationSec: 120,
     severity: "CRITICAL" as const,
     channels: [],
