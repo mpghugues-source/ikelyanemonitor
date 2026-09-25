@@ -209,6 +209,17 @@ export async function endpointAvailability(db: Db, actor: Actor, endpointIds: re
   return new Map(groups.filter((g) => g._avg.value !== null).map((g) => [g.sourceId, (g._avg.value as number) * 100]));
 }
 
+/** Failed checks (ENDPOINT_AVAILABLE = 0) per endpoint since `since`; endpoints without failures are absent. */
+export async function endpointFailedChecks(db: Db, actor: Actor, endpointIds: readonly string[], since: Date): Promise<Map<string, number>> {
+  if (!can(actor.role, "endpoints:read") || endpointIds.length === 0) return new Map();
+  const groups = await db.metricEntry.groupBy({
+    by: ["sourceId"],
+    where: { orgId: actor.orgId, metric: MetricType.ENDPOINT_AVAILABLE, sourceId: { in: [...endpointIds] }, time: { gte: since }, value: 0 },
+    _count: { _all: true },
+  });
+  return new Map(groups.map((g) => [g.sourceId, g._count._all]));
+}
+
 export const HTTP_METHODS: readonly HttpMethod[] = [
   HttpMethod.GET, HttpMethod.HEAD, HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE, HttpMethod.OPTIONS,
 ];

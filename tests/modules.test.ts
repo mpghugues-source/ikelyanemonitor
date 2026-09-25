@@ -185,8 +185,12 @@ describe("saas SLA helpers", () => {
   });
 
   it("flags an SLA breach only when there is data below target", () => {
-    expect(isSlaBreached(99.5, 99.9)).toBe(true);
-    expect(isSlaBreached(99.95, 99.9)).toBe(false);
-    expect(isSlaBreached(null, 99.9)).toBe(false);
+    // 99.9 % over 30 days = 43.2 min of budget.
+    expect(isSlaBreached(44, 99.9, 30)).toBe(true);
+    expect(isSlaBreached(43, 99.9, 30)).toBe(false);
+    expect(isSlaBreached(0, 99.9, 30)).toBe(false);
+    // A few failed checks on a new endpoint are not a breach, even though its ratio is below target.
+    expect(isSlaBreached(3, 99.9, 30)).toBe(false);
+    expect(isSlaBreached(1, 100, 30)).toBe(true);
   });
 });

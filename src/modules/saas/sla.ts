@@ -19,6 +19,11 @@ export function errorBudgetMinutes(slaTargetPercent: number, windowDays: number)
   return (1 - target / 100) * windowDays * 24 * 60;
 }
 
-export function isSlaBreached(availability: number | null, slaTargetPercent: number): boolean {
-  return availability !== null && availability < slaTargetPercent;
+/**
+ * An SLA is judged over its whole period: breached once the downtime exceeds the error budget of the
+ * window ("99.9 %" over 30 days = 43.2 min). Comparing the availability ratio instead would flag a
+ * freshly added endpoint after a few failed checks, since its window only holds hours of data.
+ */
+export function isSlaBreached(downtimeMinutes: number, slaTargetPercent: number, windowDays: number): boolean {
+  return downtimeMinutes > errorBudgetMinutes(slaTargetPercent, windowDays);
 }

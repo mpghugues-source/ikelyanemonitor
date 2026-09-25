@@ -8,11 +8,12 @@ import { requireActor } from "@/lib/auth/dal";
 import { can } from "@/lib/auth/permissions";
 import { getPrisma } from "@/lib/prisma";
 import { CheckNowButton, EndpointActions, RegisterEndpointForm } from "@/modules/saas/components/endpoint-forms";
-import { endpointAvailability, listEndpoints } from "@/modules/saas/endpoints";
+import { endpointAvailability, endpointFailedChecks, listEndpoints } from "@/modules/saas/endpoints";
 import { PROBE_ERROR_CODES } from "@/modules/saas/runner/error-codes";
 import { isSlaBreached, sslDaysLeft } from "@/modules/saas/sla";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SLA_WINDOW_DAYS = 30;
 
 export default async function SaasPage({ params }: PageProps<"/[locale]/saas">) {
   const { locale } = await params;
@@ -28,9 +29,11 @@ export default async function SaasPage({ params }: PageProps<"/[locale]/saas">) 
   const canCheck = can(actor.role, "endpoints:check");
   const now = new Date();
   const ids = endpoints.value.map((endpoint) => endpoint.id);
-  const [availability24h, availability30d] = await Promise.all([
+  const slaSince = new Date(now.getTime() - SLA_WINDOW_DAYS * DAY_MS);
+  const [availability24h, availability30d, failures30d] = await Promise.all([
     endpointAvailability(getPrisma(), actor, ids, new Date(now.getTime() - DAY_MS)),
-    endpointAvailability(getPrisma(), actor, ids, new Date(now.getTime() - 30 * DAY_MS)),
+    endpointAvailability(getPrisma(), actor, ids, slaSince),
+    endpointFailedChecks(getPrisma(), actor, ids, slaSince),
   ]);
   const percent = (value: number | undefined) =>
     value === undefined ? t("saas.noData") : `${format.number(value, { maximumFractionDigits: value >= 99 ? 3 : 1 })} %`;
@@ -64,6 +67,8 @@ export default async function SaasPage({ params }: PageProps<"/[locale]/saas">) 
                 {endpoints.value.map((endpoint) => {
                   const daysLeft = endpoint.sslExpiresAt ? sslDaysLeft(endpoint.sslExpiresAt, now) : null;
                   const month = availability30d.get(endpoint.id);
+                  // Each failed check stands for one interval of downtime.
+                  const downtimeMinutes = ((failures30d.get(endpoint.id) ?? 0) * endpoint.intervalSec) / 60;
                   const errorCode = PROBE_ERROR_CODES.find((code) => code === endpoint.lastError);
                   return (
                     <TableRow key={endpoint.id} data-testid={`endpoint-${endpoint.name}`}>
@@ -87,7 +92,7 @@ export default async function SaasPage({ params }: PageProps<"/[locale]/saas">) 
                       <TableCell className="text-muted-foreground">{percent(availability24h.get(endpoint.id))}</TableCell>
                       <TableCell className="space-x-1 text-muted-foreground">
                         <span>{percent(month)}</span>
-                        {isSlaBreached(month ?? null, endpoint.slaTargetPercent) ? <Badge variant="destructive">{t("saas.slaBreached")}</Badge> : null}
+                        {isSlaBreached(downtimeMinutes, endpoint.slaTargetPercent, SLA_WINDOW_DAYS) ? <Badge variant="destructive">{t("saas.slaBreached")}</Badge> : null}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {daysLeft === null ? "—" : daysLeft < 0 ? t("saas.sslExpired") : t("saas.sslExpiresIn", { days: daysLeft })}

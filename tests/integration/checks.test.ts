@@ -171,6 +171,9 @@ describe.skipIf(!enabled)("synthetic check runner", () => {
     expect(availability.get(id)).toBe(50);
     const outsider = await makeOrg("outsider");
     expect((await endpoints.endpointAvailability(db, outsider.OWNER, [id], new Date(0))).size).toBe(0);
+
+    expect((await endpoints.endpointFailedChecks(db, org.VIEWER, [id], new Date(Date.now() - 3600_000))).get(id)).toBe(2);
+    expect((await endpoints.endpointFailedChecks(db, outsider.OWNER, [id], new Date(0))).size).toBe(0);
   });
 
   it("with the default guard, a private target is recorded as blocked and never reached", async () => {
