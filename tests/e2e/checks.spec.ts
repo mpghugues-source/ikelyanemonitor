@@ -16,19 +16,25 @@ test.beforeAll(async () => {
   org = await makeOrg("checks");
   failingId = randomUUID();
   const healthyId = randomUUID();
+  const hourlyId = randomUUID();
   await query(
-    `INSERT INTO endpoint_checks (id, "orgId", name, url, status, "lastCheckedAt", "lastResponseMs", "lastError", "lastErrorDetail", "consecutiveFailures", "nextRunAt", "updatedAt")
-     VALUES ($1, $2, 'Internal admin', 'http://10.0.0.5/', 'DOWN', now(), NULL, 'blocked_target', '10.0.0.5', 3, now() + interval '1 hour', now()),
-            ($3, $2, 'Public site', 'https://example.com/', 'UP', now(), 42, NULL, NULL, 0, now() + interval '1 hour', now())`,
-    [failingId, org.id, healthyId],
+    `INSERT INTO endpoint_checks (id, "orgId", name, url, status, "lastCheckedAt", "lastResponseMs", "lastError", "lastErrorDetail", "consecutiveFailures", "nextRunAt", "updatedAt", "intervalSec")
+     VALUES ($1, $2, 'Internal admin', 'http://10.0.0.5/', 'DOWN', now(), NULL, 'blocked_target', '10.0.0.5', 3, now() + interval '1 hour', now(), 60),
+            ($3, $2, 'Public site', 'https://example.com/', 'UP', now(), 42, NULL, NULL, 0, now() + interval '1 hour', now(), 60),
+            ($4, $2, 'Hourly report', 'https://example.org/', 'UP', now(), 42, NULL, NULL, 0, now() + interval '1 hour', now(), 3600)`,
+    [failingId, org.id, healthyId, hourlyId],
   );
-  // Public site: 3 passed checks out of 4 in the last hour → 75 %; nothing for the failing one's 30-day window beyond today.
-  for (const [minutesAgo, value] of [[50, 1], [40, 0], [30, 1], [20, 1]] as const) {
-    await query(
-      `INSERT INTO metric_entries (time, "orgId", "sourceKind", "sourceId", metric, instance, value)
-       VALUES (now() - make_interval(mins => $1), $2, 'ENDPOINT', $3, 'ENDPOINT_AVAILABLE', '', $4)`,
-      [minutesAgo, org.id, healthyId, value],
-    );
+  // 3 passed checks out of 4 in the last hour → 75 % for both; nothing for the failing one's 30-day window.
+  // The SLA (99.9 % over 30 days = 43.2 min of downtime allowed) is judged on downtime, not on that ratio:
+  // one failed check every minute = 1 min (kept), one failed hourly check = 60 min (breached).
+  for (const id of [healthyId, hourlyId]) {
+    for (const [minutesAgo, value] of [[50, 1], [40, 0], [30, 1], [20, 1]] as const) {
+      await query(
+        `INSERT INTO metric_entries (time, "orgId", "sourceKind", "sourceId", metric, instance, value)
+         VALUES (now() - make_interval(mins => $1), $2, 'ENDPOINT', $3, 'ENDPOINT_AVAILABLE', '', $4)`,
+        [minutesAgo, org.id, id, value],
+      );
+    }
   }
 });
 
@@ -47,7 +53,8 @@ test("operators see the failure reason and availability, and can request a check
   const healthy = page.getByTestId("endpoint-Public site");
   await expect(healthy).toContainText("75 %");
   await expect(healthy).toContainText("42 ms");
-  await expect(healthy).toContainText("SLA breached"); // 75 % < 99.9 % target
+  await expect(healthy).not.toContainText("SLA breached"); // 1 min of downtime < 43.2 min budget
+  await expect(page.getByTestId("endpoint-Hourly report")).toContainText("SLA breached"); // 60 min > 43.2 min
   await expect(healthy.getByTestId("endpoint-last-error")).toHaveCount(0);
 
   await expect(failing.getByRole("button", { name: "Delete" })).toHaveCount(0);

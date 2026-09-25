@@ -35,9 +35,9 @@ jobs:
       DATABASE_URL: postgresql://ikelyane:ci_only@localhost:5432/ikelyanemonitor
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -67,7 +67,7 @@ jobs:
       - name: Browser end-to-end tests
         run: npm run test:e2e
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-traces
