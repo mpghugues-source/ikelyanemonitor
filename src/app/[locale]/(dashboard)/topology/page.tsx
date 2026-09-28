@@ -12,7 +12,7 @@ import { listHosts } from "@/modules/servers/hosts";
 import { TopologyBoard } from "@/modules/topology/components/topology-board";
 import { AddDependencyDialog, AddNodeDialog } from "@/modules/topology/components/topology-forms";
 import { EdgeList, NodeList } from "@/modules/topology/components/topology-lists";
-import { listTopology } from "@/modules/topology/service";
+import { listTopology, topologyHealth } from "@/modules/topology/service";
 
 export default async function TopologyPage({ params }: PageProps<"/[locale]/topology">) {
   const { locale } = await params;
@@ -25,6 +25,7 @@ export default async function TopologyPage({ params }: PageProps<"/[locale]/topo
   const graph = await listTopology(db, actor);
   if (!graph.ok) return null;
 
+  const health = await topologyHealth(db, actor, graph.value.nodes);
   const canWrite = can(actor.role, "topology:write");
   const [hosts, devices, databases, endpoints] = canWrite
     ? await Promise.all([listHosts(db, actor), listDevices(db, actor), listDatabases(db, actor), listEndpoints(db, actor)])
@@ -39,7 +40,7 @@ export default async function TopologyPage({ params }: PageProps<"/[locale]/topo
   const nodesById = new Map(graph.value.nodes.map((node) => [node.id, node]));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <PageHeader icon={Workflow} title={t("title")} subtitle={t("subtitle")} />
         {canWrite ? (
@@ -55,10 +56,7 @@ export default async function TopologyPage({ params }: PageProps<"/[locale]/topo
           <CardContent className="py-16 text-center text-sm text-muted-foreground">{ta("empty")}</CardContent>
         </Card>
       ) : (
-        <div>
-          <TopologyBoard graph={graph.value} />
-          <p className="mt-2 text-xs text-muted-foreground">{t("arrowHint")}</p>
-        </div>
+        <TopologyBoard graph={graph.value} health={health.ok ? health.value : {}} canWrite={canWrite} />
       )}
 
       {canWrite && graph.value.nodes.length > 0 ? (

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { breaches, breachingSince, isSustained, type MetricPoint, worstValue } from "@/modules/alerts/evaluate";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { carbonKgCo2e, energyCost, energyKwh, estimatePowerWatts, wastedCapacityRatio } from "@/modules/finops/energy";
-import { blastRadius, dependenciesOf, rootCauseCandidates, type DependencyEdge } from "@/modules/topology/graph";
+import { blastRadius, dependenciesOf, layeredLayout, rootCauseCandidates, type DependencyEdge } from "@/modules/topology/graph";
+import { combineHealth, impactedNodes } from "@/modules/topology/health";
 import { availabilityPercent, errorBudgetMinutes, isSlaBreached, sslDaysLeft } from "@/modules/saas/sla";
 
 describe("formatBytes", () => {
@@ -118,6 +119,74 @@ describe("topology graph (edge parent → child = 'parent depends on child')", (
 
   it("returns nothing when nothing is unhealthy", () => {
     expect(rootCauseCandidates(edges, new Set())).toEqual([]);
+  });
+
+  describe("layered layout", () => {
+    const ids = ["web", "api", "auth", "db", "cache", "batch", "lonely"];
+    const rowOf = (positions: Map<string, { x: number; y: number }>, id: string) => (positions.get(id) as { y: number }).y / 100;
+
+    it("puts every node below everything that depends on it (longest path)", () => {
+      const positions = layeredLayout(ids, edges, { columnGap: 200, rowGap: 100 });
+      for (const edge of edges) expect(rowOf(positions, edge.child)).toBeGreaterThan(rowOf(positions, edge.parent));
+      // db is reached by web→api→auth→db: it sits on the 4th row, not the 2nd.
+      expect(rowOf(positions, "db")).toBe(3);
+      expect(rowOf(positions, "web")).toBe(0);
+      expect(rowOf(positions, "batch")).toBe(0);
+    });
+
+    it("gives nodes without any dependency their own bottom row, and centres every row", () => {
+      const positions = layeredLayout(ids, edges, { columnGap: 200, rowGap: 100 });
+      expect(rowOf(positions, "lonely")).toBe(4);
+      expect(positions.get("lonely")?.x).toBe(0);
+      const top = [positions.get("web")?.x, positions.get("batch")?.x];
+      expect(top.sort()).toEqual([-100, 100]);
+    });
+
+    it("never stacks two nodes on the same spot", () => {
+      const positions = layeredLayout(ids, edges);
+      const spots = [...positions.values()].map((p) => `${p.x}:${p.y}`);
+      expect(new Set(spots).size).toBe(ids.length);
+    });
+
+    it("survives cycles, self-loops and edges to unknown nodes", () => {
+      const positions = layeredLayout(
+        ["a", "b", "c"],
+        [
+          { parent: "a", child: "b" },
+          { parent: "b", child: "c" },
+          { parent: "c", child: "a" },
+          { parent: "b", child: "b" },
+          { parent: "a", child: "ghost" },
+        ],
+      );
+      expect([...positions.keys()].sort()).toEqual(["a", "b", "c"]);
+      expect(new Set([...positions.values()].map((p) => p.y)).size).toBe(3);
+    });
+
+    it("is deterministic", () => {
+      expect([...layeredLayout(ids, edges)]).toEqual([...layeredLayout(ids, edges)]);
+    });
+  });
+
+  describe("live health", () => {
+    it("combines the entity status with its open incidents", () => {
+      expect(combineHealth("UP", [])).toBe("up");
+      expect(combineHealth("UP", ["INFO"])).toBe("up");
+      expect(combineHealth("UP", ["WARNING"])).toBe("degraded");
+      expect(combineHealth("UP", ["WARNING", "CRITICAL"])).toBe("down");
+      expect(combineHealth("DEGRADED", [])).toBe("degraded");
+      expect(combineHealth("DOWN", [])).toBe("down");
+      expect(combineHealth("UNKNOWN", [])).toBe("unknown");
+      expect(combineHealth("UNKNOWN", ["CRITICAL"])).toBe("down");
+      // Planned maintenance is not an outage, whatever fires meanwhile.
+      expect(combineHealth("MAINTENANCE", ["CRITICAL"])).toBe("maintenance");
+    });
+
+    it("marks as impacted everything upstream of a failure, but not the failing nodes themselves", () => {
+      expect(impactedNodes(edges, new Set(["auth"]))).toEqual(new Set(["api", "web"]));
+      expect(impactedNodes(edges, new Set(["db", "api"]))).toEqual(new Set(["auth", "web", "batch"]));
+      expect(impactedNodes(edges, new Set())).toEqual(new Set());
+    });
   });
 });
 

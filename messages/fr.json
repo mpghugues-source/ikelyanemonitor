@@ -368,7 +368,19 @@
       "routesTo": "Achemine vers",
       "replicatesTo": "Réplique vers"
     },
-    "arrowHint": "Les flèches vont d'un service vers ce dont il dépend."
+    "arrowHint": "Les flèches vont d'un service vers ce dont il dépend.",
+    "legend": "Légende",
+    "impacted": "Impacté",
+    "logical": "Nœud logique (sans état en direct)",
+    "logicalHint": "Nœud logique : il n'a pas d'état propre et passe « impacté » quand un élément dont il dépend tombe en panne.",
+    "selectHint": "Cliquez sur un nœud pour voir ce dont il dépend et ce que sa panne impacterait.",
+    "connectHint": "Faites glisser la poignée du bas d'un nœud vers un autre nœud pour ajouter une dépendance.",
+    "openIncidents": "{count, plural, one {# incident ouvert} other {# incidents ouverts}}",
+    "dependsOnList": "Dépend de",
+    "impactList": "Impactés en cas de panne",
+    "edgeSentence": "{parent} dépend de {child}",
+    "deleteDependency": "Supprimer cette dépendance",
+    "deleteDependencyConfirm": "Supprimer cette dépendance ?"
   },
   "finops": {
     "title": "FinOps et GreenOps",

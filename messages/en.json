@@ -368,7 +368,19 @@
       "routesTo": "Routes to",
       "replicatesTo": "Replicates to"
     },
-    "arrowHint": "Arrows point from a service to what it depends on."
+    "arrowHint": "Arrows point from a service to what it depends on.",
+    "legend": "Legend",
+    "impacted": "Impacted",
+    "logical": "Logical node (no live status)",
+    "logicalHint": "Logical node: it has no status of its own and turns “impacted” when something it depends on fails.",
+    "selectHint": "Click a node to highlight what it depends on and what its failure would impact.",
+    "connectHint": "Drag from the bottom handle of a node onto another node to add a dependency.",
+    "openIncidents": "{count, plural, one {# open incident} other {# open incidents}}",
+    "dependsOnList": "Depends on",
+    "impactList": "Impacted if it fails",
+    "edgeSentence": "{parent} depends on {child}",
+    "deleteDependency": "Delete this dependency",
+    "deleteDependencyConfirm": "Delete this dependency?"
   },
   "finops": {
     "title": "FinOps & GreenOps",

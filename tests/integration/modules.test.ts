@@ -293,5 +293,64 @@ describe.skipIf(!enabled)("module business logic", () => {
       const graph = await m.topology.listTopology(db, a.admin);
       expect(graph.ok && graph.value.nodes[0]).toMatchObject({ positionX: 120, positionY: 340 });
     });
+
+    it("saves a whole layout at once, never moving another tenant's nodes", async () => {
+      const a = await makeOrg("topo-layout");
+      const b = await makeOrg("topo-layout-b");
+      const mine = await m.topology.createNode(db, a.admin, { kind: "SERVICE", refId: null, label: "mine", positionX: 0, positionY: 0 });
+      const theirs = await m.topology.createNode(db, b.admin, { kind: "SERVICE", refId: null, label: "theirs", positionX: 5, positionY: 5 });
+      if (!mine.ok || !theirs.ok) throw new Error("setup");
+
+      const positions = [
+        { id: mine.value.id, x: 10, y: 20 },
+        { id: theirs.value.id, x: 999, y: 999 },
+      ];
+      expect(await m.topology.updateNodePositions(db, a.viewer, positions)).toEqual({ ok: false, error: "forbidden" });
+      expect(await m.topology.updateNodePositions(db, a.admin, positions)).toEqual({ ok: true, value: { updated: 1 } });
+      expect(await db.topologyNode.findUnique({ where: { id: theirs.value.id }, select: { positionX: true } })).toEqual({ positionX: 5 });
+      expect(await db.topologyNode.findUnique({ where: { id: mine.value.id }, select: { positionX: true, positionY: true } })).toEqual({ positionX: 10, positionY: 20 });
+    });
+
+    it("reports live health from entity status and open incidents, rolling port incidents up to the device", async () => {
+      const a = await makeOrg("topo-health");
+      const b = await makeOrg("topo-health-b");
+      const keyId = () => `ikm_${randomBytes(6).toString("hex")}`;
+      const host = await db.monitoredHost.create({ data: { orgId: a.orgId, hostname: "h.example", keyId: keyId(), hmacSecretEnc: "v1:aa:bb:cc", status: "UP" } });
+      const quiet = await db.monitoredHost.create({ data: { orgId: a.orgId, hostname: "q.example", keyId: keyId(), hmacSecretEnc: "v1:aa:bb:cc", status: "UP" } });
+      const device = await db.networkDevice.create({ data: { orgId: a.orgId, name: "sw1", ipAddress: "192.0.2.10", type: "SWITCH", status: "UP" } });
+      const port = await db.networkInterface.create({ data: { deviceId: device.id, ifIndex: 1, name: "Gi1/0/1" } });
+
+      const nodes = [];
+      for (const [kind, refId, label] of [["HOST", host.id, "h"], ["HOST", quiet.id, "q"], ["NETWORK_DEVICE", device.id, "sw1"]] as const) {
+        const node = await m.topology.createNode(db, a.admin, { kind, refId, label, positionX: 0, positionY: 0 });
+        if (!node.ok) throw new Error("setup");
+        nodes.push(node.value.id);
+      }
+      const svc = await m.topology.createNode(db, a.admin, { kind: "SERVICE", refId: null, label: "svc", positionX: 0, positionY: 0 });
+      if (!svc.ok) throw new Error("setup");
+
+      await db.incident.createMany({
+        data: [
+          { orgId: a.orgId, title: "cpu", severity: "CRITICAL", sourceKind: "HOST", sourceId: host.id },
+          { orgId: a.orgId, title: "old", severity: "CRITICAL", sourceKind: "HOST", sourceId: quiet.id, status: "RESOLVED", resolvedAt: new Date() },
+          { orgId: a.orgId, title: "port errors", severity: "WARNING", sourceKind: "NETWORK_INTERFACE", sourceId: port.id },
+          // Same source id in ANOTHER org must never leak into this map.
+          { orgId: b.orgId, title: "foreign", severity: "CRITICAL", sourceKind: "HOST", sourceId: quiet.id },
+        ],
+      });
+
+      const graph = await m.topology.listTopology(db, a.viewer);
+      if (!graph.ok) throw new Error("list");
+      const health = await m.topology.topologyHealth(db, a.viewer, graph.value.nodes);
+      expect(health).toEqual({
+        ok: true,
+        value: {
+          [nodes[0]]: { health: "down", openIncidents: 1 },
+          [nodes[1]]: { health: "up", openIncidents: 0 },
+          [nodes[2]]: { health: "degraded", openIncidents: 1 },
+        },
+      });
+      await db.incident.deleteMany({ where: { orgId: { in: [a.orgId, b.orgId] } } });
+    });
   });
 });
