@@ -2,9 +2,11 @@ package dbmetrics
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/redis/go-redis/v9"
 )
 
 // safeEndpoint returns "host:port" parsed out of dsn for display purposes — NEVER the DSN itself,
@@ -31,7 +33,38 @@ func safeEndpoint(engine, dsn string) (string, error) {
 			return "", fmt.Errorf("parsing %s DSN: %w", engine, err)
 		}
 		return cfg.Addr, nil
+	case "mongodb":
+		return mongoHosts(dsn)
+	case "redis":
+		opt, err := redis.ParseURL(dsn)
+		if err != nil {
+			return "", fmt.Errorf("parsing redis URL: %w", err)
+		}
+		return opt.Addr, nil
 	default:
 		return "", fmt.Errorf("unsupported engine %q", engine)
 	}
+}
+
+// mongoHosts extracts the host list of a mongodb:// or mongodb+srv:// URI ("h1:27017,h2:27017", or
+// the SRV name) by hand: the driver's own parser resolves SRV records over DNS, which a display
+// helper must not do. Userinfo is everything up to the LAST "@" of the authority (the driver
+// requires "@" inside a password to be percent-encoded, so that is unambiguous).
+func mongoHosts(dsn string) (string, error) {
+	rest, ok := strings.CutPrefix(dsn, "mongodb://")
+	if !ok {
+		if rest, ok = strings.CutPrefix(dsn, "mongodb+srv://"); !ok {
+			return "", fmt.Errorf("mongodb URI must start with mongodb:// or mongodb+srv://")
+		}
+	}
+	if i := strings.IndexAny(rest, "/?"); i >= 0 {
+		rest = rest[:i]
+	}
+	if i := strings.LastIndex(rest, "@"); i >= 0 {
+		rest = rest[i+1:]
+	}
+	if rest == "" {
+		return "", fmt.Errorf("mongodb URI has no host")
+	}
+	return rest, nil
 }

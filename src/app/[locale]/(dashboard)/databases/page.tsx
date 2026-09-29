@@ -67,6 +67,8 @@ export default async function DatabasesPage({ params }: PageProps<"/[locale]/dat
                     <TableCell className="text-muted-foreground">
                       {database.storageUsedBytes !== null ? formatBytes(database.storageUsedBytes) : "—"}
                       {database.storageQuotaBytes ? ` / ${formatBytes(database.storageQuotaBytes)}` : ""}
+                      {/* Redis reports its dataset size in RAM (used_memory / maxmemory), not on disk. */}
+                      {database.engine === "REDIS" && database.storageUsedBytes !== null ? ` (${t("database.inMemory")})` : ""}
                     </TableCell>
                     {canWrite ? (
                       <TableCell className="text-right">

@@ -162,8 +162,8 @@ type DatabaseInstanceInfo struct {
 	// per host+engine — e.g. "main:5432". Must never change across restarts: the server keys its
 	// upsert on it, so a changed name creates a second instance rather than updating the first.
 	Name string `json:"name"`
-	// postgresql | mysql | mariadb (this agent's engines so far; mongodb | redis | mssql also on
-	// the wire per docs/telemetry.md, not implemented here).
+	// postgresql | mysql | mariadb | mongodb | redis (mssql is also on the wire per
+	// docs/telemetry.md, not implemented by this agent).
 	Engine               string  `json:"engine"`
 	Version              string  `json:"version,omitempty"`
 	Endpoint             string  `json:"endpoint,omitempty"` // "host:port" — NEVER credentials, see internal/dbmetrics/dsn.go
@@ -199,6 +199,8 @@ type SlowQuery struct {
 	Calls        *int    `json:"calls,omitempty"`
 	RowsExamined *uint64 `json:"rowsExamined,omitempty"`
 	RowsReturned *uint64 `json:"rowsReturned,omitempty"`
+	// Database the statement ran in, when the engine reports it per statement (MongoDB).
+	DatabaseName string `json:"databaseName,omitempty"`
 }
 
 type DatabaseMetric struct {

@@ -2,8 +2,8 @@
 
 The IkelyaneMonitor agent: collects host metrics (CPU, memory, disks, network, temperature,
 uptime, process count), polls SNMP network devices assigned to it in the web UI (routers,
-switches, firewalls, APs, UPSes, BMCs — v1/v2c/v3) and monitors PostgreSQL / MySQL / MariaDB
-instances configured locally, and — only if this host's owner opts in — runs remediation scripts sent
+switches, firewalls, APs, UPSes, BMCs — v1/v2c/v3) and monitors PostgreSQL / MySQL / MariaDB /
+MongoDB / Redis instances configured locally, and — only if this host's owner opts in — runs remediation scripts sent
 by the platform. Everything goes over the signed HTTP protocol described in
 [`docs/telemetry.md`](../docs/telemetry.md).
 
@@ -32,7 +32,8 @@ DOWN rather than leaving it stale.
 Unlike SNMP devices, databases are configured **only in the agent's own config** (`databases`, see
 [Configure](#configure)) — database credentials never leave the host. The server auto-discovers each
 instance from the first sample that mentions it, keyed on its `name` (keep it stable: renaming creates
-a second instance). Supported engines: `postgresql`, `mysql`, `mariadb`.
+a second instance). Supported engines: `postgresql`, `mysql`, `mariadb`, `mongodb`, `redis` (Valkey too — it speaks the
+same protocol).
 
 Every cycle, for each instance (up to 5 polled at once, one small connection pool per instance kept
 for the agent's lifetime):
@@ -48,6 +49,20 @@ for the agent's lifetime):
 | storage used | `pg_database_size` of every database | `information_schema.tables` (data + index) |
 | slow queries | `pg_stat_statements` (PostgreSQL 13+) | `performance_schema` statement digests |
 
+| Metric | MongoDB | Redis |
+|---|---|---|
+| version, max connections | `serverStatus.version`, `connections.current + available` | `redis_version`, `CONFIG GET maxclients` (not reported if the ACL denies it) |
+| active connections / usage % | `connections.current` | `connected_clients` |
+| QPS | Δ sum of `opcounters`/s | Δ`total_commands_processed`/s |
+| cache hit ratio | WiredTiger: 1 − pages read into cache / pages requested | `keyspace_hits` / (hits + misses) |
+| deadlocks | — (not a MongoDB concept) | — |
+| replication | `repl.secondary`; lag = primary optime − own optime (`replSetGetStatus`) | `role:slave` flagged; lag not reported (INFO only has byte offsets, no time) |
+| storage used | `listDatabases.totalSize` | `used_memory` (**in RAM** — quota = `maxmemory` when set) |
+| slow queries | `system.profile` of each database (profiling must be on) | `SLOWLOG` |
+
+A MongoDB URI naming **one** host monitors that node itself (direct connection); several hosts or a
+`mongodb+srv://` name let the driver discover the replica set and watch the primary.
+
 Rates (QPS, deadlocks/min, slow queries/min) appear from the second sample onwards. An unreachable
 instance is still reported, with `reachable: false`, and the server marks it DOWN.
 
@@ -58,6 +73,17 @@ the previous cycle and its average duration **over that interval** is at or abov
 `pg_stat_statements` (`shared_preload_libraries = 'pg_stat_statements'` + `CREATE EXTENSION
 pg_stat_statements`) or `performance_schema = ON`, everything else is still collected — just no slow
 queries.
+
+MongoDB and Redis have no engine-normalized view, so the agent reduces each entry itself and **drops
+every value**: a MongoDB profiled operation becomes its namespace, operation and command *structure*
+(`shop.orders query {"find":"?","filter":{"email":"?","total":{"$gt":"?"}}}` — field names and operators
+kept, every value replaced by `?`, arrays reduced to their first element's shape, session fields
+removed); a Redis SLOWLOG entry becomes its command name only (`EVAL …`, `CONFIG GET …` — keys,
+values and script bodies are never sent). Entries logged before the agent started are not replayed,
+and the agent's own commands (client name / appName `ikelyane-agent`) are never counted. MongoDB
+profiling is per database: `db.setProfilingLevel(1, { slowms: 500 })` — keep `slowms` near
+`slowQueryThresholdMs`, the profiler itself has a cost. Redis: `slowlog-log-slower-than` is in
+microseconds (default 10 ms).
 
 ### Monitoring user
 
@@ -73,6 +99,23 @@ CREATE USER 'ikelyane_agent'@'localhost' IDENTIFIED BY '…';
 GRANT PROCESS, REPLICATION CLIENT ON *.* TO 'ikelyane_agent'@'localhost';  -- MariaDB 10.5+: REPLICA MONITOR
 GRANT SELECT ON performance_schema.* TO 'ikelyane_agent'@'localhost';
 ```
+
+```js
+// MongoDB (mongosh, as an admin) — clusterMonitor + read on every database's system.profile only
+db.getSiblingDB("admin").createRole({ role: "profileReader", roles: [],
+  privileges: [{ resource: { db: "", collection: "system.profile" }, actions: ["find"] }] })
+db.getSiblingDB("admin").createUser({ user: "ikelyane_agent", pwd: "…",
+  roles: [{ role: "clusterMonitor", db: "admin" }, { role: "profileReader", db: "admin" }] })
+```
+
+```
+# Redis 6+ ACL (redis-cli, as an admin) — no access to any key
+ACL SETUSER ikelyane_agent on >… -@all +info +ping +slowlog +config|get +hello +client|setinfo +client|setname
+```
+
+DSNs: `mongodb://ikelyane_agent:…@127.0.0.1:27017/?authSource=admin` and
+`redis://ikelyane_agent:…@127.0.0.1:6379/0` (`rediss://` for TLS). Percent-encode special characters in
+passwords.
 
 On MySQL/MariaDB, `information_schema.tables` only lists tables the account has some privilege on:
 with the grants above, **storage used is not reported**. Add `GRANT SELECT ON <schema>.* …` for the
@@ -178,7 +221,11 @@ Two ways, in order of precedence:
        { "name": "main:5432", "engine": "postgresql",
          "dsn": "postgres://ikelyane_agent:…@127.0.0.1:5432/postgres?sslmode=disable" },
        { "name": "shop:3306", "engine": "mariadb",
-         "dsn": "ikelyane_agent:…@tcp(127.0.0.1:3306)/", "slowQueryThresholdMs": 500 }
+         "dsn": "ikelyane_agent:…@tcp(127.0.0.1:3306)/", "slowQueryThresholdMs": 500 },
+       { "name": "docs:27017", "engine": "mongodb",
+         "dsn": "mongodb://ikelyane_agent:…@127.0.0.1:27017/?authSource=admin" },
+       { "name": "cache:6379", "engine": "redis",
+         "dsn": "redis://ikelyane_agent:…@127.0.0.1:6379/0" }
      ]
    }
    ```
@@ -263,7 +310,8 @@ cmd/ikelyane-agent/    entry point: flags, the collect/send loop, SNMP and datab
 internal/config/       loads IKELYANE_* env vars or a JSON file
 internal/collect/      gopsutil-based host metrics, with per-cycle rate calculation for IOPS/bandwidth
 internal/snmp/         SNMP v1/v2c/v3 polling (github.com/gosnmp/gosnmp) — MIB-II/IF-MIB, counter-delta rates
-internal/dbmetrics/    PostgreSQL (pgx) / MySQL-MariaDB (go-sql-driver) monitoring, slow-query interval deltas
+internal/dbmetrics/    PostgreSQL (pgx) / MySQL-MariaDB (go-sql-driver) / MongoDB (mongo-driver v2) / Redis (go-redis)
+                       monitoring, slow-query interval deltas, value-free MongoDB/Redis query shapes
 internal/remediation/  local remediation policy, sandboxed script runner, signed job fetch/report
 internal/pollerconfig/ fetches the assigned SNMP device list (+ decrypted credentials) from the server
 internal/telemetry/    wire types (mirrors src/lib/telemetry/schemas.ts), HMAC signing, HTTP client
@@ -284,4 +332,6 @@ collector against whatever machine executes `go test`. `internal/snmp`'s real-ag
 (`SNMP_TEST_TARGET=…`, see that file's doc comment to stand up a local `snmpd`) poll an actual SNMP
 v2c/v3 responder rather than mocking every PDU. `internal/dbmetrics`'s unit tests pin the slow-query
 interval arithmetic (interval average vs lifetime, stats reset, eviction) and the server's size limits;
-the collectors themselves were verified against real PostgreSQL 16 and MariaDB 11 instances.
+the collectors themselves were verified against real PostgreSQL 16 and MariaDB 11 instances, and
+`nosql_integration_test.go` (`MONGO_TEST_URI` / `REDIS_TEST_URL`, procedure in its doc comment) runs them
+against real MongoDB 8 and Redis 8 servers, checking that no key or value ever reaches a slow-query entry.

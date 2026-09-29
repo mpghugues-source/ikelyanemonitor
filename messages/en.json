@@ -291,7 +291,8 @@
     "storageUsed": "Storage used",
     "storageQuota": "Storage quota",
     "replication": "Replication",
-    "replicationLag": "Replication lag"
+    "replicationLag": "Replication lag",
+    "inMemory": "in memory"
   },
   "saas": {
     "title": "Web & SaaS endpoints",

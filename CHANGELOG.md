@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `ikelyane-agent`: MongoDB and Redis (and Valkey) monitoring — connections, QPS, cache hit ratio,
+  replication, storage (Redis: memory), slow operations from MongoDB's profiler and Redis's SLOWLOG
+  reduced to value-free shapes (MongoDB command structure, Redis command name). Least-privilege
+  monitoring accounts documented in `agent/README.md`.
 - CI workflow (GitHub Actions): typecheck, lint, unit + integration tests against a real
   TimescaleDB service container, production build, and the Playwright browser suite on every push
   and pull request. Build/tests badge in the README.

@@ -12,6 +12,7 @@ import (
 const (
 	maxQueryTextBytes = 4000 // schemas.ts caps at 4000 UTF-16 units; UTF-8 bytes >= UTF-16 units, so this is safe
 	maxVersionBytes   = 64
+	maxEndpointBytes  = 255
 	maxFingerprintLen = 128
 )
 

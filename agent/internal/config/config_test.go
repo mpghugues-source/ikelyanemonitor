@@ -210,9 +210,25 @@ func TestLoad_Databases_MissingFieldsRejected(t *testing.T) {
 func TestLoad_Databases_UnsupportedEngineRejected(t *testing.T) {
 	clearEnv(t)
 	validBaseEnv(t)
-	t.Setenv(envDatabasesJSON, `[{"name":"main","engine":"mongodb","dsn":"mongodb://localhost"}]`)
+	t.Setenv(envDatabasesJSON, `[{"name":"main","engine":"mssql","dsn":"sqlserver://localhost"}]`)
 	if _, err := Load(""); err == nil {
-		t.Fatal("mongodb is not implemented by this agent yet and must be rejected, not silently ignored")
+		t.Fatal("mssql is not implemented by this agent yet and must be rejected, not silently ignored")
+	}
+}
+
+func TestLoad_Databases_MongoAndRedisAccepted(t *testing.T) {
+	clearEnv(t)
+	validBaseEnv(t)
+	t.Setenv(envDatabasesJSON, `[
+		{"name":"docs","engine":"mongodb","dsn":"mongodb://u:p@localhost:27017/?authSource=admin"},
+		{"name":"cache","engine":"redis","dsn":"redis://u:p@localhost:6379/0"}
+	]`)
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Databases) != 2 || cfg.Databases[0].Engine != "mongodb" || cfg.Databases[1].Engine != "redis" {
+		t.Fatalf("unexpected databases: %+v", cfg.Databases)
 	}
 }
 

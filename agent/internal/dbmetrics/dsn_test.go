@@ -70,3 +70,48 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+func TestSafeEndpoint_MongoDB(t *testing.T) {
+	cases := []struct {
+		name string
+		dsn  string
+		want string
+	}{
+		{"single host", "mongodb://myuser:s3cret@db.example.com:27017/?authSource=admin", "db.example.com:27017"},
+		{"replica set", "mongodb://myuser:s3cret@a.example.com:27017,b.example.com:27017/app?replicaSet=rs0", "a.example.com:27017,b.example.com:27017"},
+		{"srv, no DNS lookup", "mongodb+srv://myuser:s3cret@cluster0.example.net/?retryWrites=true", "cluster0.example.net"},
+		{"encoded @ in password", "mongodb://myuser:s3cret%40x@db.example.com", "db.example.com"},
+		{"no credentials", "mongodb://127.0.0.1:27017", "127.0.0.1:27017"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := safeEndpoint("mongodb", c.dsn)
+			if err != nil {
+				t.Fatalf("safeEndpoint() error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+			assertNoCredentials(t, got, "myuser", "s3cret")
+		})
+	}
+	if _, err := safeEndpoint("mongodb", "http://db.example.com"); err == nil {
+		t.Error("a non-mongodb URI must be rejected")
+	}
+}
+
+func TestSafeEndpoint_Redis(t *testing.T) {
+	for dsn, want := range map[string]string{
+		"redis://myuser:s3cret@cache.example.com:6380/2": "cache.example.com:6380",
+		"rediss://:s3cret@cache.example.com":             "cache.example.com:6379",
+	} {
+		got, err := safeEndpoint("redis", dsn)
+		if err != nil {
+			t.Fatalf("safeEndpoint(%q) error: %v", dsn, err)
+		}
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+		assertNoCredentials(t, got, "myuser", "s3cret")
+	}
+}

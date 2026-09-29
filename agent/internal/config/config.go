@@ -54,10 +54,11 @@ type Database struct {
 	// Stable identifier, unique per host+engine (e.g. "main:5432") — see
 	// telemetry.DatabaseInstanceInfo.Name's doc comment for why it must never change.
 	Name string `json:"name"`
-	// postgresql | mysql | mariadb.
+	// postgresql | mysql | mariadb | mongodb | redis.
 	Engine string `json:"engine"`
 	// Driver-native connection string — postgres://user:pass@host:port/db?sslmode=disable for
-	// postgresql, user:pass@tcp(host:port)/db for mysql/mariadb. Never logged, never sent anywhere:
+	// postgresql, user:pass@tcp(host:port)/db for mysql/mariadb, mongodb://user:pass@host:27017/?authSource=admin
+	// for mongodb, redis://user:pass@host:6379/0 (rediss:// for TLS) for redis. Never logged, never sent anywhere:
 	// internal/dbmetrics derives only a credential-free "host:port" from it for display.
 	DSN string `json:"dsn"`
 	// Slow queries at or above this are reported. Optional, default 1000 (matches the server's own default).
@@ -149,7 +150,7 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-var supportedDatabaseEngines = map[string]bool{"postgresql": true, "mysql": true, "mariadb": true}
+var supportedDatabaseEngines = map[string]bool{"postgresql": true, "mysql": true, "mariadb": true, "mongodb": true, "redis": true}
 
 func (c *Config) validate() error {
 	var missing []string
@@ -190,7 +191,7 @@ func (c *Config) validate() error {
 			return fmt.Errorf("each entry in databases needs name, engine and dsn — got %+v", db)
 		}
 		if !supportedDatabaseEngines[db.Engine] {
-			return fmt.Errorf("database %q: unsupported engine %q (this agent supports postgresql, mysql, mariadb)", db.Name, db.Engine)
+			return fmt.Errorf("database %q: unsupported engine %q (this agent supports postgresql, mysql, mariadb, mongodb, redis)", db.Name, db.Engine)
 		}
 		if seenNames[db.Name] {
 			return fmt.Errorf("database %q is configured twice — names must be unique", db.Name)
