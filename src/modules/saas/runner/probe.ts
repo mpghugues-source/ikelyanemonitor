@@ -2,7 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import type { TLSSocket } from "node:tls";
 import { PROBE_ERROR_CODES, type ProbeErrorCode } from "@/modules/saas/runner/error-codes";
-import { assertLiteralTargetAllowed, BlockedTargetError, guardedLookup } from "@/modules/saas/runner/target-guard";
+import { assertLiteralTargetAllowed, BlockedTargetError, guardedLookup } from "@/lib/net/target-guard";
 
 /**
  * One synthetic HTTP(S) check: request, follow redirects (each hop re-vetted), assert status and body,

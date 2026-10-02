@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { AlertOperator, type AnomalySensitivity, IncidentEventType, IncidentStatus } from "@/generated/prisma/enums";
+import { getEnv } from "@/lib/env";
 import type { MetricRow } from "@/lib/telemetry/metrics";
 import { assess, type AnomalyVerdict, type Baseline } from "@/modules/aiops/anomaly";
 import { loadBaseline } from "@/modules/aiops/baseline";
@@ -115,9 +116,12 @@ function appUrl(): string | null {
  * in this batch (see the try/catch at each call site below).
  */
 async function notify(db: PrismaClient, rule: NotifiableRule, incident: NotifiableIncident, outcome: NotificationOutcome): Promise<void> {
-  const results = await dispatchIncidentNotification(rule, incident, outcome, { appUrl: appUrl() });
+  const results = await dispatchIncidentNotification(rule, incident, outcome, {
+    appUrl: appUrl(),
+    allowPrivateTargets: getEnv().WEBHOOKS_ALLOW_PRIVATE_TARGETS,
+  });
   if (results.length === 0) return;
-  const data = { outcome, results: results.map((r) => ({ channel: r.channel, ok: r.ok, error: r.error ?? null })) };
+  const data = { outcome, results: results.map((r) => ({ channel: r.channel, ok: r.ok, code: r.code ?? null, error: r.error ?? null })) };
   await db.incidentEvent.create({ data: { incidentId: incident.id, type: IncidentEventType.NOTIFIED, data } });
 }
 
@@ -125,7 +129,7 @@ async function notify(db: PrismaClient, rule: NotifiableRule, incident: Notifiab
  * Re-evaluate every enabled rule (static threshold and/or AIOps anomaly detection, see conditionHolds)
  * against the metric points just stored by one telemetry ingestion or synthetic check, opening/updating/
  * auto-resolving incidents as needed, running root-cause analysis when one opens, and dispatching
- * notifications (email/Slack/webhook — see src/modules/alerts/notify.ts) on open, on
+ * notifications (email/Slack/Teams/webhook — see src/modules/alerts/notify.ts) on open, on
  * auto-resolution, and again while an incident stays open once `cooldownSec` has elapsed since the
  * last one.
  *

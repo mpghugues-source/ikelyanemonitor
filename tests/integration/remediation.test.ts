@@ -203,7 +203,7 @@ describe.skipIf(!enabled)("auto-remediation", () => {
     const base = {
       description: null, sourceKind: "HOST" as const, sourceId: host.id, instanceFilter: null, operator: "GT" as const, threshold: 90,
       anomalyDetection: false, anomalySensitivity: "MEDIUM" as const, durationSec: 0, severity: "CRITICAL" as const,
-      channels: [], notifyEmails: [], webhookUrl: null, cooldownSec: 900,
+      channels: [], notifyEmails: [], slackWebhookUrl: null, teamsWebhookUrl: null, webhookUrl: null, cooldownSec: 900,
     };
     expect((await rules.createAlertRule(db, org.ADMIN, { ...base, name: "cpu", metric: "CPU_USAGE_PERCENT", remediationActionId: auto, autoRemediate: true })).ok).toBe(true);
     expect((await rules.createAlertRule(db, org.ADMIN, { ...base, name: "mem", metric: "MEMORY_USED_PERCENT", remediationActionId: guarded, autoRemediate: true })).ok).toBe(true);

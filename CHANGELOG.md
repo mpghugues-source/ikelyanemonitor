@@ -9,6 +9,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Microsoft Teams alert notifications (Adaptive Card for a Teams Workflows webhook), and a “Send a test”
+  button on each alert rule that reports the outcome per channel (audited, administrators only).
+- Each chat channel has its own URL (Slack, Teams, generic webhook). Previously Slack and the generic
+  webhook shared one URL; migration `20261002100000_notification_targets` moves the URL of existing Slack
+  rules to the Slack field. SMS and push are shown as “coming soon” instead of silently doing nothing.
+
+### Security
+
+- Alert webhooks are now subject to the same SSRF guard as synthetic checks (`src/lib/net/target-guard.ts`):
+  private/loopback/link-local targets are refused at save time and at connection time (DNS rebinding),
+  and redirects are no longer followed. `WEBHOOKS_ALLOW_PRIVATE_TARGETS=true` restores internal delivery
+  for self-hosted installs. Before this, an organization administrator could make the platform POST to
+  internal services (e.g. the database port or a cloud metadata endpoint).
+
 - `ikelyane-agent`: MongoDB and Redis (and Valkey) monitoring — connections, QPS, cache hit ratio,
   replication, storage (Redis: memory), slow operations from MongoDB's profiler and Redis's SLOWLOG
   reduced to value-free shapes (MongoDB command structure, Redis command name). Least-privilege

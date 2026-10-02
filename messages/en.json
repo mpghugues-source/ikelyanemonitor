@@ -513,7 +513,7 @@
       "push": "Push notification"
     },
     "notifyEmails": "Email recipients",
-    "webhookUrl": "Webhook URL",
+    "webhookUrl": "Generic webhook URL",
     "anomalyDetection": "AI anomaly detection",
     "anomalySensitivity": "Anomaly sensitivity",
     "sensitivity": {
@@ -521,7 +521,10 @@
       "medium": "Medium",
       "high": "High"
     },
-    "conditionRequired": "Set a threshold, enable anomaly detection, or both."
+    "conditionRequired": "Set a threshold, enable anomaly detection, or both.",
+    "slackWebhookUrl": "Slack webhook URL",
+    "teamsWebhookUrl": "Microsoft Teams webhook URL",
+    "comingSoon": "coming soon"
   },
   "alertsAdmin": {
     "createTitle": "New alert rule",
@@ -544,14 +547,33 @@
       "not_found": "This rule no longer exists.",
       "generic": "Something went wrong. Please try again.",
       "condition_required": "Set a threshold, enable anomaly detection, or both.",
-      "invalid_remediation": "The selected remediation action is not part of your organization."
+      "invalid_remediation": "The selected remediation action is not part of your organization.",
+      "invalid_webhook": "A webhook URL is invalid or points to a private address.",
+      "no_channel": "Select a channel and fill in its recipients or URL, then save the rule."
     },
     "noThreshold": "No threshold (anomaly detection only)",
     "thresholdHelp": "Leave empty for an anomaly-only rule. With both, the value must be anomalous AND cross the threshold.",
     "anomalyHelp": "Flags values far from what is normal for this series at this time of day (learned from the last 7 days). Needs about 30 data points before it starts.",
     "remediationAction": "Remediation action",
     "noRemediation": "None",
-    "autoRemediateHelp": "Otherwise — or if the action requires approval — the run waits for approval on the incident."
+    "autoRemediateHelp": "Otherwise — or if the action requires approval — the run waits for approval on the incident.",
+    "teamsHelp": "In Teams, add the Workflows template “Post to a channel when a webhook request is received” and paste its URL.",
+    "webhookHelp": "Each channel needs its own URL. Only public addresses are accepted.",
+    "test": "Send a test",
+    "testTitle": "Test notification",
+    "testHelp": "Sends a [TEST] message through every channel of the saved rule.",
+    "testSending": "Sending…",
+    "testSent": "Sent",
+    "testResult": {
+      "invalid_url": "Invalid URL",
+      "blocked_target": "Refused: the address is not public",
+      "redirect": "The endpoint answered with a redirect (not followed)",
+      "http_status": "The endpoint rejected the request",
+      "timeout": "No answer within 10 seconds",
+      "dns": "Host name not found",
+      "connection": "Connection failed",
+      "smtp": "The e-mail could not be sent"
+    }
   },
   "aiops": {
     "title": "AIOps",

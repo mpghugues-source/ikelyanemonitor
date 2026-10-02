@@ -2,18 +2,20 @@ import dns from "node:dns";
 import net from "node:net";
 
 /**
- * SSRF protection for the synthetic check runner.
+ * SSRF protection for every outgoing request whose target a tenant chooses: synthetic checks
+ * (src/modules/saas/runner/probe.ts) and alert webhooks — Slack, Teams, generic (src/lib/notify/http.ts).
  *
- * Endpoints are configured by organization members, but probed FROM THE PLATFORM's own network: without
- * this guard any tenant could make the runner reach the monitoring database, the cloud metadata service
- * (169.254.169.254), or any other service listening on the host or its private network — and read the
- * outcome back through status codes, timings and "body contains" assertions.
+ * Those targets are configured by organization members, but reached FROM THE PLATFORM's own network:
+ * without this guard any tenant could make the platform reach the monitoring database, the cloud
+ * metadata service (169.254.169.254), or any other service listening on the host or its private
+ * network — and read the outcome back through status codes, timings and "body contains" assertions.
  *
  * Every address a check connects to is vetted AT CONNECTION TIME (the `lookup` hook below), not only
  * when the URL is saved: a hostname can resolve to a public address when the form is submitted and to
  * 127.0.0.1 on the next probe (DNS rebinding), and each redirect hop is a new target.
  *
- * Self-hosted installs that deliberately monitor their own LAN set CHECKS_ALLOW_PRIVATE_TARGETS=true.
+ * Self-hosted installs that deliberately reach their own LAN set CHECKS_ALLOW_PRIVATE_TARGETS=true
+ * (checks) or WEBHOOKS_ALLOW_PRIVATE_TARGETS=true (alert webhooks).
  */
 
 // Special-purpose ranges (IANA IPv4/IPv6 Special-Purpose Address Registries) that are never a

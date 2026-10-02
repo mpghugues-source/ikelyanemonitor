@@ -1,10 +1,16 @@
 "use client";
 
 import type { MetricSource } from "@/generated/prisma/enums";
-import { Pencil, Power, Trash2 } from "lucide-react";
+import { Pencil, Power, Send, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
-import { createAlertRuleAction, deleteAlertRuleAction, toggleAlertRuleAction, updateAlertRuleAction } from "@/app/actions/alerts";
+import {
+  createAlertRuleAction,
+  deleteAlertRuleAction,
+  testAlertRuleNotificationAction,
+  toggleAlertRuleAction,
+  updateAlertRuleAction,
+} from "@/app/actions/alerts";
 import { ActionForm } from "@/components/forms/action-form";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { ALERT_OPERATORS, ALERT_SEVERITIES, ANOMALY_SENSITIVITIES, ALERT_SOURCE_KINDS, METRICS_BY_SOURCE_KIND, metricTypeMessageKey, NOTIFICATION_CHANNELS, sourceKindMessageKey } from "@/modules/alerts/constants";
+import { ALERT_OPERATORS, ALERT_SEVERITIES, ANOMALY_SENSITIVITIES, ALERT_SOURCE_KINDS, METRICS_BY_SOURCE_KIND, metricTypeMessageKey, NOTIFICATION_CHANNELS, sourceKindMessageKey, UNAVAILABLE_NOTIFICATION_CHANNELS } from "@/modules/alerts/constants";
 import type { AlertRuleRow } from "@/modules/alerts/rules";
 
 const NAMESPACES = ["alertsAdmin.errors", "auth.errors"];
@@ -132,21 +138,41 @@ function RuleFields({ rule, sources }: { rule?: AlertRuleRow; sources: SourceOpt
       <div className="space-y-2 sm:col-span-2">
         <Label>{t("alerts.channels")}</Label>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {NOTIFICATION_CHANNELS.map((channel) => (
-            <label key={channel} className="flex items-center gap-2 text-sm">
-              <Checkbox name="channels" value={channel} defaultChecked={rule?.channels.includes(channel)} />
-              {t(`alerts.channel.${channel.toLowerCase()}`)}
-            </label>
-          ))}
+          {NOTIFICATION_CHANNELS.map((channel) => {
+            const unavailable = UNAVAILABLE_NOTIFICATION_CHANNELS.includes(channel);
+            return (
+              <label key={channel} className={unavailable ? "flex items-center gap-2 text-sm text-muted-foreground" : "flex items-center gap-2 text-sm"}>
+                <Checkbox
+                  name="channels"
+                  value={channel}
+                  disabled={unavailable}
+                  defaultChecked={!unavailable && rule?.channels.includes(channel)}
+                  data-testid={`rule-channel-${channel.toLowerCase()}`}
+                />
+                {t(`alerts.channel.${channel.toLowerCase()}`)}
+                {unavailable ? <span className="text-xs">({t("alerts.comingSoon")})</span> : null}
+              </label>
+            );
+          })}
         </div>
       </div>
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="notifyEmails">{t("alerts.notifyEmails")}</Label>
         <Input id="notifyEmails" name="notifyEmails" defaultValue={rule?.notifyEmails.join(", ")} placeholder="ops@example.com, oncall@example.com" />
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2 sm:col-span-2">
+        <Label htmlFor="slackWebhookUrl">{t("alerts.slackWebhookUrl")}</Label>
+        <Input id="slackWebhookUrl" name="slackWebhookUrl" type="url" maxLength={500} defaultValue={rule?.slackWebhookUrl ?? ""} placeholder="https://hooks.slack.com/services/…" />
+      </div>
+      <div className="space-y-2 sm:col-span-2">
+        <Label htmlFor="teamsWebhookUrl">{t("alerts.teamsWebhookUrl")}</Label>
+        <Input id="teamsWebhookUrl" name="teamsWebhookUrl" type="url" maxLength={500} defaultValue={rule?.teamsWebhookUrl ?? ""} placeholder="https://….logic.azure.com/workflows/…" />
+        <p className="text-xs text-muted-foreground">{t("alertsAdmin.teamsHelp")}</p>
+      </div>
+      <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="webhookUrl">{t("alerts.webhookUrl")}</Label>
         <Input id="webhookUrl" name="webhookUrl" type="url" maxLength={500} defaultValue={rule?.webhookUrl ?? ""} placeholder="https://…" />
+        <p className="text-xs text-muted-foreground">{t("alertsAdmin.webhookHelp")}</p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="cooldownSec">{t("alerts.cooldown")} (s)</Label>
@@ -242,12 +268,58 @@ function EditAlertRuleDialog({ rule, sources }: { rule: AlertRuleRow; sources: S
   );
 }
 
+/** Sends a [TEST] notification through the saved rule's channels and lists each channel's outcome. */
+function TestNotificationDialog({ rule }: { rule: AlertRuleRow }) {
+  const t = useTranslations();
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button size="icon-sm" variant="ghost" aria-label={t("alertsAdmin.test")} data-testid="rule-test-notification">
+            <Send className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("alertsAdmin.testTitle")}</DialogTitle>
+          <DialogDescription>{t("alertsAdmin.testHelp")}</DialogDescription>
+        </DialogHeader>
+        <ActionForm action={testAlertRuleNotificationAction} namespaces={NAMESPACES} className="space-y-4">
+          {({ pending, state }) => (
+            <>
+              <input type="hidden" name="id" value={rule.id} />
+              {state.status === "success" && state.data ? (
+                <ul className="space-y-1 text-sm" data-testid="test-notification-results">
+                  {state.data.map((result) => (
+                    <li key={result.channel} data-testid={`test-result-${result.channel.toLowerCase()}`} data-ok={result.ok}>
+                      <span className="font-medium">{t(`alerts.channel.${result.channel.toLowerCase()}`)}</span>
+                      {" — "}
+                      <span className={result.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
+                        {result.ok ? t("alertsAdmin.testSent") : t(`alertsAdmin.testResult.${result.code ?? "connection"}`)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <DialogFooter>
+                <Button type="submit" disabled={pending}>{pending ? t("alertsAdmin.testSending") : t("alertsAdmin.test")}</Button>
+              </DialogFooter>
+            </>
+          )}
+        </ActionForm>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function AlertRuleActions({ rule, sources }: { rule: AlertRuleRow; sources: SourceOptions }) {
   const t = useTranslations("alertsAdmin");
   const tc = useTranslations("common");
   return (
     <div className="flex items-center justify-end gap-1">
       <EditAlertRuleDialog rule={rule} sources={sources} />
+      <TestNotificationDialog rule={rule} />
       <ActionForm action={toggleAlertRuleAction} namespaces={NAMESPACES}>
         {({ pending }) => (
           <>

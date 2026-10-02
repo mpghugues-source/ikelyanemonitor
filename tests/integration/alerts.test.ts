@@ -85,11 +85,66 @@ describe.skipIf(!enabled)("alerts and incidents", () => {
     severity: "CRITICAL" as const,
     channels: [],
     notifyEmails: [],
+    slackWebhookUrl: null,
+    teamsWebhookUrl: null,
     webhookUrl: null,
     cooldownSec: 900,
   };
 
   describe("alert rules", () => {
+    it("refuses webhook URLs aimed at private or loopback targets, unless the install opts in", async () => {
+      const a = await makeOrg("rule-webhook");
+      for (const field of ["slackWebhookUrl", "teamsWebhookUrl", "webhookUrl"] as const) {
+        for (const url of ["http://127.0.0.1:5441/", "http://localhost:3020/x", "http://169.254.169.254/", "ftp://example.com/x"]) {
+          expect(await m.rules.createAlertRule(db, a.admin, { ...ruleInput, [field]: url }), `${field}=${url}`).toEqual({ ok: false, error: "invalid_webhook" });
+        }
+      }
+      expect((await m.rules.createAlertRule(db, a.admin, { ...ruleInput, webhookUrl: "http://10.1.2.3/hook" }, { allowPrivateTargets: true })).ok).toBe(true);
+      const created = await m.rules.createAlertRule(db, a.admin, {
+        ...ruleInput,
+        channels: ["SLACK", "TEAMS"],
+        slackWebhookUrl: "https://hooks.slack.com/services/T0/B0/x",
+        teamsWebhookUrl: "https://prod-1.westeurope.logic.azure.com/workflows/x",
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      expect(await m.rules.updateAlertRule(db, a.admin, created.value.id, { ...ruleInput, teamsWebhookUrl: "http://[::1]/" })).toEqual({ ok: false, error: "invalid_webhook" });
+      const list = await m.rules.listAlertRules(db, a.admin);
+      expect(list.ok && list.value.find((rule) => rule.id === created.value.id)).toMatchObject({
+        slackWebhookUrl: "https://hooks.slack.com/services/T0/B0/x",
+        teamsWebhookUrl: "https://prod-1.westeurope.logic.azure.com/workflows/x",
+      });
+    });
+
+    it("sends a test notification only for writers of the same organization, reports each channel and audits it", async () => {
+      const a = await makeOrg("rule-test-a");
+      const b = await makeOrg("rule-test-b");
+      const options = { allowPrivateTargets: false, appUrl: null };
+
+      const silent = await m.rules.createAlertRule(db, a.admin, ruleInput);
+      if (!silent.ok) throw new Error("setup");
+      expect(await m.rules.sendTestNotification(db, a.admin, silent.value.id, options)).toEqual({ ok: false, error: "no_channel" });
+
+      // Saved with a public-looking hostname that resolves to loopback: the save-time check cannot see it,
+      // the send-time guard must (DNS-based SSRF).
+      const rebinding = await m.rules.createAlertRule(db, a.admin, { ...ruleInput, name: "rebind", channels: ["TEAMS"], teamsWebhookUrl: "http://localtest.me:5441/" });
+      if (!rebinding.ok) throw new Error("setup");
+
+      expect(await m.rules.sendTestNotification(db, a.operator, rebinding.value.id, options)).toEqual({ ok: false, error: "forbidden" });
+      expect(await m.rules.sendTestNotification(db, b.admin, rebinding.value.id, options)).toEqual({ ok: false, error: "not_found" });
+
+      const sent = await m.rules.sendTestNotification(db, a.admin, rebinding.value.id, options);
+      expect(sent.ok).toBe(true);
+      if (!sent.ok) return;
+      expect(sent.value).toHaveLength(1);
+      expect(sent.value[0]).toMatchObject({ channel: "TEAMS", ok: false });
+      // localtest.me resolves to 127.0.0.1 publicly; offline resolvers fail with a DNS error instead — both never connect.
+      expect(["blocked_target", "dns"]).toContain(sent.value[0]?.code);
+
+      const audit = await db.auditLog.findFirst({ where: { orgId: a.orgId, action: "alert_rule.test_sent" } });
+      expect(audit?.targetId).toBe(rebinding.value.id);
+    });
+
     it("enforces write permission and rejects a source from another organization", async () => {
       const a = await makeOrg("rule-perm-a");
       const b = await makeOrg("rule-perm-b");

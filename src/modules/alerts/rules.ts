@@ -1,15 +1,17 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { AlertOperator, AnomalySensitivity, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
 import { resolveSourceLabels, sourceExists } from "@/modules/alerts/resolve-source";
+import { dispatchIncidentNotification, type ChannelResult } from "@/modules/alerts/notify";
 import { recordAudit } from "@/lib/auth/audit";
 import type { Actor, Db } from "@/lib/auth/db";
 import { can } from "@/lib/auth/permissions";
+import { webhookUrlAllowed } from "@/lib/notify/http";
 import { fail, ok, type Result } from "@/lib/result";
 
 /**
  * Alert rules: a static threshold, AIOps anomaly detection, or both (both must then hold — see
- * conditionHolds in src/modules/alerts/evaluate.ts). Auto-remediation is configured in the schema but
- * not wired up yet.
+ * conditionHolds in src/modules/alerts/evaluate.ts), optionally queuing a remediation action, and notifying
+ * the channels the rule selects (src/modules/alerts/notify.ts).
  */
 export interface AlertRuleRow {
   id: string;
@@ -30,6 +32,8 @@ export interface AlertRuleRow {
   severity: Severity;
   channels: NotificationChannel[];
   notifyEmails: string[];
+  slackWebhookUrl: string | null;
+  teamsWebhookUrl: string | null;
   webhookUrl: string | null;
   cooldownSec: number;
   remediationActionId: string | null;
@@ -45,7 +49,7 @@ export async function listAlertRules(db: Db, actor: Actor): Promise<Result<Alert
     select: {
       id: true, name: true, description: true, enabled: true, sourceKind: true, sourceId: true, metric: true,
       instanceFilter: true, operator: true, threshold: true, anomalyDetection: true, anomalySensitivity: true, durationSec: true, severity: true, channels: true,
-      notifyEmails: true, webhookUrl: true, cooldownSec: true, remediationActionId: true, autoRemediate: true, createdAt: true,
+      notifyEmails: true, slackWebhookUrl: true, teamsWebhookUrl: true, webhookUrl: true, cooldownSec: true, remediationActionId: true, autoRemediate: true, createdAt: true,
     },
   });
 
@@ -83,6 +87,8 @@ export interface AlertRuleInput {
   severity: Severity;
   channels: NotificationChannel[];
   notifyEmails: string[];
+  slackWebhookUrl: string | null;
+  teamsWebhookUrl: string | null;
   webhookUrl: string | null;
   cooldownSec: number;
   /** Remediation to queue (or suggest) when the rule opens an incident. */
@@ -91,7 +97,18 @@ export interface AlertRuleInput {
   autoRemediate: boolean;
 }
 
-export type AlertRuleWriteError = "forbidden" | "invalid_source" | "not_found" | "condition_required" | "invalid_remediation";
+export type AlertRuleWriteError = "forbidden" | "invalid_source" | "not_found" | "condition_required" | "invalid_remediation" | "invalid_webhook";
+
+/** Save-time webhook check (non-http(s), loopback/private IP literal, localhost) — the send-time guard still applies. */
+function webhookError(input: AlertRuleInput, allowPrivateTargets: boolean): "invalid_webhook" | null {
+  const urls = [input.slackWebhookUrl, input.teamsWebhookUrl, input.webhookUrl].filter((url): url is string => url !== null);
+  return urls.every((url) => webhookUrlAllowed(url, allowPrivateTargets)) ? null : "invalid_webhook";
+}
+
+export interface RuleWriteOptions {
+  /** WEBHOOKS_ALLOW_PRIVATE_TARGETS */
+  allowPrivateTargets: boolean;
+}
 
 async function remediationInOrg(db: PrismaClient, orgId: string, id: string | null): Promise<boolean> {
   return !id || (await db.remediationAction.count({ where: { id, orgId } })) === 1;
@@ -104,9 +121,14 @@ function conditionError(input: AlertRuleInput): "condition_required" | null {
   return halfThreshold || (!hasThreshold && !input.anomalyDetection) ? "condition_required" : null;
 }
 
-export async function createAlertRule(db: PrismaClient, actor: Actor, input: AlertRuleInput): Promise<Result<{ id: string }, AlertRuleWriteError>> {
+export async function createAlertRule(
+  db: PrismaClient,
+  actor: Actor,
+  input: AlertRuleInput,
+  options: RuleWriteOptions = { allowPrivateTargets: false },
+): Promise<Result<{ id: string }, AlertRuleWriteError>> {
   if (!can(actor.role, "alerts:write")) return fail("forbidden");
-  const invalid = conditionError(input);
+  const invalid = conditionError(input) ?? webhookError(input, options.allowPrivateTargets);
   if (invalid) return fail(invalid);
   if (input.sourceId && !(await sourceExists(db, actor.orgId, input.sourceKind, input.sourceId))) return fail("invalid_source");
   if (!(await remediationInOrg(db, actor.orgId, input.remediationActionId))) return fail("invalid_remediation");
@@ -127,9 +149,15 @@ export async function createAlertRule(db: PrismaClient, actor: Actor, input: Ale
   });
 }
 
-export async function updateAlertRule(db: PrismaClient, actor: Actor, id: string, input: AlertRuleInput): Promise<Result<true, AlertRuleWriteError>> {
+export async function updateAlertRule(
+  db: PrismaClient,
+  actor: Actor,
+  id: string,
+  input: AlertRuleInput,
+  options: RuleWriteOptions = { allowPrivateTargets: false },
+): Promise<Result<true, AlertRuleWriteError>> {
   if (!can(actor.role, "alerts:write")) return fail("forbidden");
-  const invalid = conditionError(input);
+  const invalid = conditionError(input) ?? webhookError(input, options.allowPrivateTargets);
   if (invalid) return fail(invalid);
   if (input.sourceId && !(await sourceExists(db, actor.orgId, input.sourceKind, input.sourceId))) return fail("invalid_source");
   if (!(await remediationInOrg(db, actor.orgId, input.remediationActionId))) return fail("invalid_remediation");
@@ -185,4 +213,49 @@ export async function deleteAlertRule(db: PrismaClient, actor: Actor, id: string
     });
     return ok(true as const);
   });
+}
+
+/**
+ * "Send a test": dispatch a clearly-labelled [TEST] notification through every channel the SAVED rule selects,
+ * and report each channel's outcome so an admin can fix a wrong Slack/Teams URL before a real incident.
+ * Gated by `alerts:write` (it makes the platform post to admin-chosen URLs) and audited.
+ */
+export async function sendTestNotification(
+  db: PrismaClient,
+  actor: Actor,
+  id: string,
+  options: RuleWriteOptions & { appUrl: string | null },
+): Promise<Result<ChannelResult[], "forbidden" | "not_found" | "no_channel">> {
+  if (!can(actor.role, "alerts:write")) return fail("forbidden");
+  const rule = await db.alertRule.findFirst({ where: { id, orgId: actor.orgId } });
+  if (!rule) return fail("not_found");
+
+  const results = await dispatchIncidentNotification(
+    rule,
+    {
+      id: `test-${rule.id}`,
+      title: rule.name,
+      severity: rule.severity,
+      sourceKind: rule.sourceKind,
+      sourceLabel: null,
+      metric: rule.metric,
+      triggerValue: null,
+      peakValue: null,
+    },
+    "test",
+    { appUrl: options.appUrl, allowPrivateTargets: options.allowPrivateTargets },
+  );
+  if (results.length === 0) return fail("no_channel");
+
+  await recordAudit(db, {
+    action: "alert_rule.test_sent",
+    orgId: actor.orgId,
+    actorId: actor.userId,
+    actorEmail: actor.email,
+    targetType: "alert_rule",
+    targetId: rule.id,
+    ipAddress: actor.ip,
+    metadata: { name: rule.name, results: results.map((r) => ({ channel: r.channel, ok: r.ok, code: r.code ?? null })) },
+  });
+  return ok(results);
 }

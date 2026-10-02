@@ -48,6 +48,7 @@ export type AuditAction =
   | "alert_rule.enabled"
   | "alert_rule.disabled"
   | "alert_rule.deleted"
+  | "alert_rule.test_sent"
   | "remediation_action.created"
   | "remediation_action.updated"
   | "remediation_action.enabled"

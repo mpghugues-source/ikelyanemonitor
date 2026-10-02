@@ -513,7 +513,7 @@
       "push": "Notification push"
     },
     "notifyEmails": "Destinataires e-mail",
-    "webhookUrl": "URL du webhook",
+    "webhookUrl": "URL du webhook générique",
     "anomalyDetection": "Détection d'anomalies par IA",
     "anomalySensitivity": "Sensibilité de détection",
     "sensitivity": {
@@ -521,7 +521,10 @@
       "medium": "Moyenne",
       "high": "Élevée"
     },
-    "conditionRequired": "Définissez un seuil, activez la détection d'anomalies, ou les deux."
+    "conditionRequired": "Définissez un seuil, activez la détection d'anomalies, ou les deux.",
+    "slackWebhookUrl": "URL du webhook Slack",
+    "teamsWebhookUrl": "URL du webhook Microsoft Teams",
+    "comingSoon": "bientôt"
   },
   "alertsAdmin": {
     "createTitle": "Nouvelle règle d'alerte",
@@ -544,14 +547,33 @@
       "not_found": "Cette règle n'existe plus.",
       "generic": "Une erreur est survenue. Veuillez réessayer.",
       "condition_required": "Définissez un seuil, activez la détection d'anomalies, ou les deux.",
-      "invalid_remediation": "L'action de remédiation choisie ne fait pas partie de votre organisation."
+      "invalid_remediation": "L'action de remédiation choisie ne fait pas partie de votre organisation.",
+      "invalid_webhook": "Une URL de webhook est invalide ou pointe vers une adresse privée.",
+      "no_channel": "Cochez un canal et renseignez ses destinataires ou son URL, puis enregistrez la règle."
     },
     "noThreshold": "Aucun seuil (détection d'anomalies seule)",
     "thresholdHelp": "Laissez vide pour une règle d'anomalie seule. Avec les deux, la valeur doit être anormale ET franchir le seuil.",
     "anomalyHelp": "Signale les valeurs éloignées de ce qui est normal pour cette série à cette heure de la journée (appris sur les 7 derniers jours). Il faut une trentaine de points avant qu'elle ne se déclenche.",
     "remediationAction": "Action de remédiation",
     "noRemediation": "Aucune",
-    "autoRemediateHelp": "Sinon — ou si l'action exige une approbation — l'exécution attend une approbation sur l'incident."
+    "autoRemediateHelp": "Sinon — ou si l'action exige une approbation — l'exécution attend une approbation sur l'incident.",
+    "teamsHelp": "Dans Teams, ajoutez le modèle Workflows « Publier dans un canal à la réception d'une requête webhook » et collez son URL.",
+    "webhookHelp": "Chaque canal a sa propre URL. Seules les adresses publiques sont acceptées.",
+    "test": "Envoyer un test",
+    "testTitle": "Notification de test",
+    "testHelp": "Envoie un message [TEST] sur chaque canal de la règle enregistrée.",
+    "testSending": "Envoi…",
+    "testSent": "Envoyé",
+    "testResult": {
+      "invalid_url": "URL invalide",
+      "blocked_target": "Refusé : l'adresse n'est pas publique",
+      "redirect": "Le point d'accès a répondu par une redirection (non suivie)",
+      "http_status": "Le point d'accès a refusé la requête",
+      "timeout": "Aucune réponse en 10 secondes",
+      "dns": "Nom d'hôte introuvable",
+      "connection": "Échec de connexion",
+      "smtp": "L'e-mail n'a pas pu être envoyé"
+    }
   },
   "aiops": {
     "title": "AIOps",

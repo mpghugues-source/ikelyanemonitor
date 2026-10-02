@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MAX_BODY_BYTES, probe, type ProbeRequest } from "@/modules/saas/runner/probe";
 import { nextHealth, resultMetricRows, sanitizeHeaders } from "@/modules/saas/runner/runner";
-import { assertLiteralTargetAllowed, guardedLookup, isPublicAddress } from "@/modules/saas/runner/target-guard";
+import { assertLiteralTargetAllowed, guardedLookup, isPublicAddress } from "@/lib/net/target-guard";
 
 describe("isPublicAddress", () => {
   it.each([

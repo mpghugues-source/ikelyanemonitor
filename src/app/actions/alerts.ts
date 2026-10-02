@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { AlertOperator, AnomalySensitivity, MetricSource, MetricType, NotificationChannel, Severity } from "@/generated/prisma/enums";
-import { authorize } from "@/lib/auth/dal";
+import { authorize, getBaseUrl } from "@/lib/auth/dal";
 import { errorState, type FormState } from "@/lib/form-state";
+import { getEnv } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
-import { createAlertRule, deleteAlertRule, setAlertRuleEnabled, updateAlertRule } from "@/modules/alerts/rules";
+import type { ChannelResult } from "@/modules/alerts/notify";
+import { createAlertRule, deleteAlertRule, sendTestNotification, setAlertRuleEnabled, updateAlertRule } from "@/modules/alerts/rules";
 
 const idSchema = z.string().min(1).max(64);
 
@@ -47,6 +49,8 @@ const ruleSchema = z.object({
   severity: z.enum(Severity),
   channels: z.array(z.enum(NotificationChannel)).optional(),
   notifyEmails: emailListSchema,
+  slackWebhookUrl: httpUrlSchema,
+  teamsWebhookUrl: httpUrlSchema,
   webhookUrl: httpUrlSchema,
   cooldownSec: z.coerce.number().int().min(60).max(86400),
   remediationActionId: z.string().trim().max(64).optional(),
@@ -64,10 +68,16 @@ function toInput(data: z.infer<typeof ruleSchema>) {
     description: data.description || null,
     sourceId: data.sourceId || null,
     instanceFilter: data.instanceFilter || null,
+    slackWebhookUrl: data.slackWebhookUrl || null,
+    teamsWebhookUrl: data.teamsWebhookUrl || null,
     webhookUrl: data.webhookUrl || null,
     channels: data.channels ?? [],
     remediationActionId: data.remediationActionId || null,
   };
+}
+
+function writeOptions() {
+  return { allowPrivateTargets: getEnv().WEBHOOKS_ALLOW_PRIVATE_TARGETS };
 }
 
 function readForm(formData: FormData) {
@@ -84,7 +94,7 @@ export async function createAlertRuleAction(_previous: FormState, formData: Form
   const parsed = ruleSchema.safeParse(readForm(formData));
   if (!parsed.success) return errorState("generic");
 
-  const result = await createAlertRule(getPrisma(), auth.value.actor, toInput(parsed.data));
+  const result = await createAlertRule(getPrisma(), auth.value.actor, toInput(parsed.data), writeOptions());
   if (!result.ok) return errorState(result.error);
 
   revalidatePath("/", "layout");
@@ -100,7 +110,7 @@ export async function updateAlertRuleAction(_previous: FormState, formData: Form
   const parsed = ruleSchema.safeParse(readForm(formData));
   if (!parsed.success) return errorState("generic");
 
-  const result = await updateAlertRule(getPrisma(), auth.value.actor, id.data, toInput(parsed.data));
+  const result = await updateAlertRule(getPrisma(), auth.value.actor, id.data, toInput(parsed.data), writeOptions());
   if (!result.ok) return errorState(result.error);
 
   revalidatePath("/", "layout");
@@ -129,4 +139,22 @@ export async function deleteAlertRuleAction(_previous: FormState, formData: Form
   if (!result.ok) return errorState(result.error);
   revalidatePath("/", "layout");
   return { status: "success" };
+}
+
+/** Per-channel outcome of a test send, for the dialog (codes are translated client-side). */
+export type TestNotificationResult = Pick<ChannelResult, "channel" | "ok" | "code">[];
+
+export async function testAlertRuleNotificationAction(_previous: FormState<TestNotificationResult>, formData: FormData): Promise<FormState<TestNotificationResult>> {
+  const auth = await authorize("alerts:write");
+  if (!auth.ok) return errorState(auth.error);
+  const id = idSchema.safeParse(formData.get("id"));
+  if (!id.success) return errorState("not_found");
+
+  const result = await sendTestNotification(getPrisma(), auth.value.actor, id.data, {
+    ...writeOptions(),
+    appUrl: await getBaseUrl(),
+  });
+  if (!result.ok) return errorState(result.error);
+  // Only the code goes back to the browser: a raw error could echo part of a webhook URL.
+  return { status: "success", data: result.value.map(({ channel, ok, code }) => ({ channel, ok, code })) };
 }

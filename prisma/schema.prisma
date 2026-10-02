@@ -934,9 +934,14 @@ model AlertRule {
   anomalySensitivity AnomalySensitivity @default(MEDIUM)
 
   // ── Notification ──
-  channels     NotificationChannel[]
-  notifyEmails String[]
-  webhookUrl   String?
+  channels        NotificationChannel[]
+  notifyEmails    String[]
+  /// Slack incoming webhook (channel SLACK).
+  slackWebhookUrl String?
+  /// Microsoft Teams Workflows webhook — "Post to a channel when a webhook request is received" (channel TEAMS).
+  teamsWebhookUrl String?
+  /// Generic JSON webhook (channel WEBHOOK).
+  webhookUrl      String?
   /// Minimum delay between two notifications for the same rule + source.
   cooldownSec  Int                   @default(900)
 

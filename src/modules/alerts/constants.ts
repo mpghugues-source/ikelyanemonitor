@@ -8,10 +8,14 @@ export const ALERT_OPERATORS: readonly AlertOperator[] = [
   AlertOperator.GT, AlertOperator.GTE, AlertOperator.LT, AlertOperator.LTE, AlertOperator.EQ, AlertOperator.NEQ,
 ];
 
+/** Channels a rule form offers (in display order). */
 export const NOTIFICATION_CHANNELS: readonly NotificationChannel[] = [
   NotificationChannel.EMAIL, NotificationChannel.SLACK, NotificationChannel.TEAMS,
   NotificationChannel.WEBHOOK, NotificationChannel.SMS, NotificationChannel.PUSH,
 ];
+
+/** No provider wired up yet: shown greyed out ("coming soon") and never dispatched — see src/modules/alerts/notify.ts. */
+export const UNAVAILABLE_NOTIFICATION_CHANNELS: readonly NotificationChannel[] = [NotificationChannel.SMS, NotificationChannel.PUSH];
 
 /** Only sources that currently produce time-series metrics (see docs/telemetry.md). */
 export const ANOMALY_SENSITIVITIES: readonly AnomalySensitivity[] = [AnomalySensitivity.LOW, AnomalySensitivity.MEDIUM, AnomalySensitivity.HIGH];

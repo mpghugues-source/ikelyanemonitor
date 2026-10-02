@@ -36,10 +36,16 @@ const envSchema = z.object({
   /**
    * Synthetic check runner (scripts/worker.ts). By default checks may only reach PUBLIC
    * addresses — tenants must not be able to probe the platform's own network (see
-   * src/modules/saas/runner/target-guard.ts). Set to "true" only on a single-tenant, self-hosted
+   * src/lib/net/target-guard.ts). Set to "true" only on a single-tenant, self-hosted
    * install that deliberately monitors its own LAN.
    */
   CHECKS_ALLOW_PRIVATE_TARGETS: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  /**
+   * Same protection for alert webhooks (Slack, Microsoft Teams, generic — src/lib/notify/http.ts):
+   * by default they may only be delivered to public addresses. "true" lets a self-hosted install
+   * post to an internal chat/automation server.
+   */
+  WEBHOOKS_ALLOW_PRIVATE_TARGETS: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   /** Probes a runner keeps in flight at once. */
   CHECK_RUNNER_CONCURRENCY: z.coerce.number().int().min(1).max(500).default(20),
 

@@ -25,7 +25,7 @@ React Flow · Prisma 7 · PostgreSQL 17 + TimescaleDB · Zod.
 | Module logic: energy/carbon model, dependency-graph blast radius, SLA helpers | ✅ done (pure, tested) |
 | Dashboard UIs (CRUD, forms) for servers/databases/network/SaaS/topology | ✅ done |
 | Authentication & RBAC — sessions, sign-in throttling, roles (Owner/Admin/Operator/Viewer), invitations (emailed), members, audit log, host registration UI, TOTP two-factor + recovery codes | ✅ done; tested against a real database, both server logic (`npm test`) and browser flows (`npm run test:e2e`) |
-| Alert evaluation, incident lifecycle, notifications (e-mail, Slack, generic webhook) | ✅ done |
+| Alert evaluation, incident lifecycle, notifications (e-mail, Slack, Microsoft Teams, generic webhook — one URL per channel, SSRF-guarded, “Send a test” button); SMS/push not yet | ✅ done |
 | Synthetic HTTP(S) checks — run by the background worker (`npm run worker`): status/body assertions, redirects, TLS expiry, availability 24 h / 30 days vs SLA, "check now", SSRF-guarded, alerts on `ENDPOINT_*` metrics | ✅ done |
 | `ikelyane-agent` (Go) — host metrics (CPU/memory/disks/network/temperature/uptime) + SNMP v1/v2c/v3 device polling (fetches its assignment + credentials from the server) + PostgreSQL/MySQL/MariaDB/MongoDB/Redis monitoring (connections, QPS, cache, deadlocks, replication, storage, value-free slow queries), signed delivery, offline buffering | ✅ done; see [`agent/`](agent) |
 | AIOps — anomaly detection (robust baseline with daily seasonality, per-rule sensitivity, combinable with a threshold) and root-cause analysis (dependency map + time correlation, explained in the UI; optional Claude narrative EN/FR when `ANTHROPIC_API_KEY` is set) | ✅ done |
@@ -116,7 +116,7 @@ agent/                         ikelyane-agent (Go) — separate module, see agen
 - **Synthetic checks cannot reach the platform's own network (SSRF):** every address a check connects
   to — IP literal, resolved hostname (checked at connection time, so DNS rebinding does not help) and
   every redirect hop — must be public unicast; loopback, private, link-local (cloud metadata),
-  CGNAT, IPv4-mapped IPv6 etc. are refused (`src/modules/saas/runner/target-guard.ts`). Only a
+  CGNAT, IPv4-mapped IPv6 etc. are refused (`src/lib/net/target-guard.ts`). Only a
   single-tenant install monitoring its own LAN should set `CHECKS_ALLOW_PRIVATE_TARGETS=true`.
   Configured request headers are never forwarded to another origin on redirect.
 - **Auto-remediation is opt-in on each host, not on the platform:** a script only runs if the host's
