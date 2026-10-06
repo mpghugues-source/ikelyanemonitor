@@ -100,6 +100,18 @@ test("an administrator arranges the map, draws a dependency and deletes another"
     })
     .toBe(true);
 
+  // The layout is saved before the 300 ms fitView animation ends: measure handles only once the viewport stops moving.
+  const viewport = page.locator(".react-flow__viewport");
+  let lastTransform = "";
+  await expect
+    .poll(async () => {
+      const transform = await viewport.evaluate((el) => getComputedStyle(el).transform);
+      const settled = transform === lastTransform;
+      lastTransform = transform;
+      return settled;
+    }, { intervals: [150] })
+    .toBe(true);
+
   // Draw "Orders API depends on CDN" from the API's bottom handle onto the CDN's top handle.
   const from = await mapNode(page, id.api).locator(".react-flow__handle.source").boundingBox();
   const to = await mapNode(page, id.cdn).locator(".react-flow__handle.target").boundingBox();
